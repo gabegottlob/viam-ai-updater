@@ -1,3 +1,6 @@
 google-genai
 pydantic
 pytest
+langchain
+langgraph
+langchain-google-genai

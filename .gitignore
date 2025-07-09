@@ -3,3 +3,5 @@ __pycache__/
 ai_updater/*.txt
 ai_updater/scenario-*/ai_generated/
 .vscode/launch.json
+src/
+tests/

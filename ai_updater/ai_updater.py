@@ -76,6 +76,30 @@ class AIUpdater:
         if not api_key:
             raise ValueError("GOOGLE_API_KEY environment variable not set and no API key provided")
         self.client = genai.Client(api_key=api_key)
+        self.total_cost = 0.0
+
+    def calculate_cost(self, usage_metadata: types.GenerateContentResponse.UsageMetadata, model: str) -> float:
+        """Calculates the estimated cost of a Gemini response.
+
+        Args:
+            usage_metadata: The usage_metadata object from the Gemini response.
+            model: The name of the Gemini model used to generate the response.
+
+        Returns:
+            float: The estimated cost of the response.
+        """
+        if model == "gemini-2.5-flash":
+            INPUT_COST_PER_MILLION_TOKENS = 0.30
+            OUTPUT_COST_PER_MILLION_TOKENS = 2.50
+        else:
+            print(f"WARNING: {model} is not a supported model for cost calculation")
+            return 0.0
+
+        input_tokens = usage_metadata.prompt_token_count
+        output_tokens = usage_metadata.candidates_token_count
+
+        cost = (input_tokens / 1_000_000) * INPUT_COST_PER_MILLION_TOKENS + (output_tokens / 1_000_000) * OUTPUT_COST_PER_MILLION_TOKENS
+        return cost
 
     def get_relevant_context(self, git_diff_output: str) -> types.GenerateContentResponse:
         """Utilizes AI to gather relevant context files for analysis.
@@ -108,6 +132,7 @@ class AIUpdater:
         )
         print(f"Model version: {response.model_version}")
         print(f"Token data from from context gathering call: {response.usage_metadata.total_token_count}\n")
+        self.total_cost += self.calculate_cost(response.usage_metadata, "gemini-2.5-flash")
         return response
 
     def get_diff_analysis(self, git_diff_output: str, relevant_files: list[str]) -> types.GenerateContentResponse:
@@ -149,6 +174,7 @@ class AIUpdater:
         # Count tokens for logging
         print(f"Model version: {response.model_version}")
         print(f"Token data from from diff analysis call: {response.usage_metadata.total_token_count}\n")
+        self.total_cost += self.calculate_cost(response.usage_metadata, "gemini-2.5-flash")
         return response
 
     def generate_implementations(self, diff_analysis: types.GenerateContentResponse):
@@ -189,6 +215,7 @@ class AIUpdater:
                 )
             print(f"Model version: {response.model_version}")
             print(f"Token data from from implementation generation call: {response.usage_metadata.total_token_count}\n")
+            self.total_cost += self.calculate_cost(response.usage_metadata, "gemini-2.5-flash")
 
             # Write the generated content to files
             parsed_response: GeneratedFiles = response.parsed
@@ -264,6 +291,7 @@ class AIUpdater:
 
         self.generate_implementations(diff_analysis)
 
+        print(f"\nTotal estimated cost for this run: ${self.total_cost:.4f}")
 
 def main():
     """Main entry point for the AI updater script."""

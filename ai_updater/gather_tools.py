@@ -2,14 +2,14 @@ import os
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
-import subprocess
+import json
 
-from gather_tools_prompt import GATHER_TOOLS_PROMPT, GATHER_TOOLS_PROMPT_2
+from gather_tools_prompt import GATHER_TOOLS_PROMPT_1, GATHER_TOOLS_PROMPT_2
 
-SYSTEM_PROMPT ='''You are an expert AI agent tasked with intelligently selecting context from throughout an SDK codebase. Follow the instructions in the prompt
-meticulously and ensure your output matches what is requested in the prompt.
+SYSTEM_PROMPT ='''You are an expert AI agent tasked with intelligently selecting context from throughout an SDK codebase.
+Follow the instructions in the prompt meticulously and ensure your output matches what is requested in the prompt.
+IMPORTANT: You must use the provided tools as instructed.
 '''
-
 
 class ContextFiles(BaseModel):
     """Model for storing the files that should be included as context."""
@@ -62,6 +62,18 @@ def read_file_tool(file_path: str) -> dict:
         except Exception as e:
             return {"file_path": file_path, "file_content": f"Error reading file: {str(e)}"}
 
+def output_relevant_context_tool(relevant_context_files: dict) -> dict:
+    """Output the final selection of relevant context files for the next AI in the pipeline.
+
+    This tool should be called at the end of your exploration process after you have analyzed
+    the git diff and explored the codebase. It finalizes your analysis and saves the selected
+    context files that will be provided to the next AI in the pipeline.
+
+    Args:
+        relevant_context_files: Dict which maps file paths to explanations of why they are relevant context for the next AI.
+    """
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    write_to_file(os.path.join(current_dir, "gather_tools_response.txt"), json.dumps(relevant_context_files, indent=2))
 
 class AIUpdater:
     """Class for updating SDK code based on proto changes using AI."""
@@ -97,7 +109,7 @@ class AIUpdater:
         sdk_tree_output = read_file_content(os.path.join(self.current_dir, "sdktree.txt"))
         tests_tree_output = read_file_content(os.path.join(self.current_dir, "teststree.txt"))
 
-        prompt = GATHER_TOOLS_PROMPT_2.format(
+        prompt = GATHER_TOOLS_PROMPT_1.format(
             sdk_tree_structure=sdk_tree_output,
             tests_tree_structure=tests_tree_output,
             git_diff_output=git_diff_output
@@ -110,12 +122,13 @@ class AIUpdater:
                 temperature=0.0,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 system_instruction=SYSTEM_PROMPT,
-                tools=[read_file_tool]
+                tools=[read_file_tool, output_relevant_context_tool]
             )
         )
         print(f"Model version: {response.model_version}")
         print(f"Token data from from getrelevantdirs_prompt: {response.usage_metadata.total_token_count}\n")
-        write_to_file(os.path.join(self.current_dir, "gather_tools_response.txt"), response.text)
+        print(response.usage_metadata)
+        #write_to_file(os.path.join(self.current_dir, "gather_tools_response.txt"), response.text)
 
 
 def main():

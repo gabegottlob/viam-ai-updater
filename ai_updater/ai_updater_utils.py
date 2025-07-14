@@ -1,5 +1,3 @@
-from google.genai import types
-
 def write_to_file(filepath: str, content: str) -> None:
     """Write content to a file at the specified path. This will overwrite the existing file contents if it already exists.
 

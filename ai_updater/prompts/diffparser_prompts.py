@@ -1,139 +1,98 @@
-#Main prompt for analyzing proto changes and identifying required implementations
+#Main prompt for analyzing git diff and generating implementation instructions
 DIFFPARSER_P = '''
-You are the second Gemini LLM in a three-stage AI pipeline for automatically updating SDK code based on proto definition changes:
+You are Stage 2 in a three-stage AI pipeline for automatically updating SDK code based on proto definition changes:
 
-STAGE 1: Context Selection - Identify relevant files to be used as context and examples for analysis
-STAGE 2 (YOUR ROLE): Diff Analysis - Use selected context to determine what code changes are needed based on proto changes
-STAGE 3: Implementation Generation - Write the actual code changes to update the SDK
+STAGE 1: Context Selection - Already completed, provided you with relevant context files
+STAGE 2 (YOUR ROLE): Diff Analysis - Analyze proto changes and generate specific implementation instructions
+STAGE 3: Implementation Generation - Will execute your instructions to write actual code changes
 
 Your specific job is to:
-1. Analyze the proto changes in the git diff
-2. Accurately identify only the files that need to be modified to implement these changes (or created if no existing file is suitable for modification)
-3. Provide precise and comprehensive instructions for what needs to be implemented or changed within each of those identified files.
 
-Here is a rough outline of the SDK to help you understand its architecture and functionality:
-=== SDK ARCHITECTURE ===
-1. Root Directory (src/viam/):
-   - Core SDK functionality and utilities
-   - Contains essential base files:
-     * __init__.py: Package initialization and exports
-     * errors.py: Error definitions and handling
-     * logging.py: Logging configuration and utilities
-     * operations.py: Core operation implementations
-     * sessions_client.py: Session management
-     * streams.py: Streaming functionality
-     * utils.py: Common utility functions
+1. Thoroughly analyze the provided git diff to understand exactly what has changed in the proto definitions
+2. Study the provided context files to understand existing SDK patterns, conventions, and implementation approaches
+3. Determine precisely which files need to be updated or created to implement these proto changes
+4. Generate detailed, unambiguous implementation instructions for each file that needs modification
 
-2. Components (src/viam/components/):
-   - Core building blocks of robotic systems (motors, cameras, arms, etc.)
-   - Each component has a standard interface defined in proto files
-   - Implemented across three layers:
-     * Abstract base classes (component.py)
-     * Client implementations (client.py)
-     * Service implementations (service.py)
-
-3. Proto (src/viam/proto/):
-   - Contains Protocol Buffer definitions
-   - Defines service interfaces and message types
-   - Used for RPC communication between clients and services
-   - Includes both component-specific and common message types
-
-4. Gen (src/viam/gen/):
-   - Contains auto-generated Python code from the proto files
-   - Provides Python classes, services, and message types for use throughout the SDK
-   - These files are auto-generated and you should NOT edit or suggest changes to them, as they will be regenerated automatically from the proto definitions.
-
-5. Resource (src/viam/resource/):
-   - Manages the fundamental units of the SDK
-   - Handles resource discovery, configuration, and lifecycle
-   - Provides base classes for all SDK resources
-   - Manages resource dependencies and relationships
-
-6. Robot (src/viam/robot/):
-   - Core robot management functionality
-   - Handles robot configuration and setup
-   - Manages resource discovery and registration
-   - Provides robot client and service implementations
-
-7. RPC (src/viam/rpc/):
-   - Implements the RPC communication layer
-   - Handles both streaming and unary RPCs
-   - Manages authentication and metadata
-   - Provides utilities for RPC communication
-
-8. Services (src/viam/services/):
-   - Higher-level services built on top of components
-   - Includes services like motion planning, navigation
-   - Provides service-specific clients and implementations
-   - Handles complex operations across multiple components
-
-9. Module (src/viam/module/):
-   - Supports modular, reusable robot configurations
-   - Enables custom component implementations
-   - Handles module packaging and distribution
-   - Manages module dependencies and versioning
-
-10. Media (src/viam/media/):
-   - Handles media-related functionality
-   - Manages image and video processing
-   - Provides utilities for media streaming
-   - Handles media format conversions
-
-11. App (src/viam/app/):
-    - Application-level functionality
-    - Handles app configuration and setup
-    - Provides utilities for app development
-    - Manages app-specific resources
-
-12. Tests Directory (tests/):
-   - Contains comprehensive test suite for the SDK
-
-Here are the specific files from the SDK that are relevant to the changes being made or would be valuable context:
-=== SELECTED CONTEXT FILES ===
-{selected_context_files}
-
-Here are the changes to the proto files (provided as a git diff):
+## Git Diff (Proto Changes):
 {git_diff_output}
 
-TASK OVERVIEW:
-Based on these changes and your understanding of the codebase, output the paths of the files that need to be updated, and what needs to be implemented within that file.
+## Selected Context Files:
+{selected_context_files}
 
-These instructions will then be passed to another Gemini LLM which will implement the changes. That LLM operates without any additional context of the codebase or analogous examples; it relies *solely* on your instructions to generate code. Therefore, your instructions must be:
-- Highly relevant and precise: Directly address the required changes stemming from the proto diff.
-- Extremely detailed: Your instructions must contain all necessary information for the next LLM to:
-    - **For existing files**: Regenerate the complete file contents (when provided the original file) by applying your specified modifications, preserving original functionality and formatting. Focus on the changes needed, not the unchanged code. This includes providing the exact code to be inserted or modified.
-    - **For new files**: Generate the entire file content from scratch, including all necessary boilerplate, imports, class definitions, method signatures, and logic. You must provide the *complete* code for the new file within the instructions.
-    - **For all files (existing and new)**: Include explicit details for:
-        - Exact method signatures (including parameters, return types, `async` keyword if applicable).
-        - Class structure and inheritance details.
-        - Full code snippets for new or modified logic, including internal implementation details.
-        - All required import statements (both existing ones to be preserved and new ones to be added or generated).
-        - Any necessary comments or docstrings.
-        - Clear, unambiguous indications of where new code should be inserted (e.g., "insert method `foo` after `bar` method") or where existing code should be modified (e.g., "modify `__init__` to include `self.new_attr = default`"), maintaining correct Python syntax, indentation, and newlines. Do not rely on the next LLM to infer placement.
-        - If a change relies on another part of the codebase (e.g., a new constant or function), you *must* explicitly define or refer to that dependency within the instructions for the affected file, rather than assuming the next LLM has this context.
+## CRITICAL REQUIREMENTS FOR YOUR OUTPUT:
 
-IMPORTANT: ALSO IDENTIFY ANY FILES WITHIN the `tests/` DIRECTORY THAT NEED TO BE UPDATED.
-For each implementation file that needs changes, you must identify if there are corresponding test files that would need to be updated to test the new functionality.
-Include these test files in your list, and provide specific instructions for adding or modifying test cases to cover the new functionality. These instructions should be as detailed as the implementation instructions.
+### Implementation Instructions Must Be:
+- **COMPLETE**: Include every detail needed to implement the changes correctly
+- **SPECIFIC**: Provide exact method signatures, parameter names, return types, and implementation logic
+- **UNAMBIGUOUS**: Stage 3 will implement exactly what you specify with no additional context
+- **PATTERN-FOLLOWING**: Use the context files to understand and follow existing SDK conventions
+- **BEHAVIOR-PRESERVING**: Ensure existing functionality remains unchanged unless explicitly modified by proto changes
 
-IMPORTANT: If a new file is to be created, include its full path in the `files_to_update` list and provide instructions for its entire content.
-The subsequent AI stage will use these instructions to generate the complete new file from scratch.
+### For Each File That Needs Changes:
+Provide implementation instructions that specify:
 
-IMPORTANT: THE ORIGINAL FUNCTIONALITY OF THE SDK MUST REMAIN EXACTLY INTACT. THESE CHANGES WILL BE DIRECTLY REINSERTED INTO THE CODEBASE.
-ENSURE YOUR `files_to_update` LIST CONTAINS ONLY THE FILES THAT REQUIRE CHANGES. DO NOT INCLUDE EXTRANEOUS FILES IN YOUR RESPONSE.
+**FOR EXISTING FILES:**
+- Exactly which methods/classes/functions need to be added, modified, or removed
+- Complete method signatures with parameter names and types
+- Any and all implementation logic
+- Where in the file to place new code (e.g., "Add method after line X" or "Add to end of class Y")
+- Any existing code that needs modification and exactly how to change it
+
+**FOR NEW FILES:**
+- Explicitly state "This is a new file that needs to be created from scratch"
+- Complete file structure
+- All classes, methods, and functions that need to be implemented
+- Follow patterns from similar existing files shown in the context
+
+## ANALYSIS APPROACH:
+
+1. **Parse the Git Diff**: Identify what specific proto messages, services, methods, or fields have been added, removed, or modified
+
+2. **Map Proto Changes to SDK Impact**: Using the context files, determine:
+   - Which SDK components/services correspond to the changed protos
+   - What new functionality needs to be implemented
+   - What existing functionality needs to be updated
+   - Which files contain similar implementations to use as patterns
+
+3. **Generate File-Specific Instructions**: For each file that needs changes:
+   - Study similar files in the context to understand implementation patterns
+   - Determine exact changes needed (new methods, modified signatures, etc.)
+   - Specify implementation details that follow established conventions
+   - Ensure backward compatibility and proper error handling
+
+4. **Validate Completeness**: Ensure your instructions cover:
+   - All necessary implementation files
+   - Corresponding test files and test updates
+   - Any utility or helper functions needed
+   - Proper integration with existing SDK architecture
+
+## OUTPUT REQUIREMENTS:
+
+Your response must contain:
+- `files_to_update`: Array of file paths that need modification or creation
+- `implementation_details`: Array of detailed implementation instructions (one per file, same order as files_to_update)
+
+The implementation instructions will be the ONLY information provided to Stage 3. They must be comprehensive enough for an AI to implement correct, functional code without any additional context or clarification.
+
+Remember: Stage 3 will receive only your implementation instructions and the existing file content (if the file exists). It will not have access to the git diff, context files, or any other information. Your instructions must be completely self-contained and actionable.
 '''
-#System prompt for analyzing proto changes and identifying required implementations
+
+#System prompt for analyzing git diff and generating implementation instructions
 DIFFPARSER_S = '''
-You are the second stage in an AI pipeline for updating SDK code, functioning as an
-expert code change analyst for Python SDKs impacted by protobuf definition changes.
-Your primary task is to precisely analyze a provided git diff alongside relevant code context,
-then identify all necessary code modifications within the SDK's source and test files. This includes identifying
-existing files that need modifications, and, *only when absolutely necessary*, identifying entirely new files that need to be created.
-For each identified file (existing or new), you must generate extremely detailed and unambiguous implementation instructions.
-These instructions must be comprehensive enough for the subsequent AI stage to regenerate the complete file content
-(for existing files) or generate the entire content (for new files).
-Crucially, your output must focus solely on changes directly necessitated by the proto diff; do not invent or suggest
-extraneous modifications. You must assume the next stage has no prior context of the codebase and will
-strictly follow your instructions. Therefore, your instructions must be extremely detailed and comprehensive
-and not rely on any prior context of the codebase.
+You are a precise code analysis and instruction generation AI specializing in SDK development.
+
+Your role is to analyze protocol buffer changes and translate them into specific, actionable implementation instructions for downstream code generation.
+
+Key responsibilities:
+- Thoroughly understand proto changes and their implications for SDK implementation
+- Leverage provided context files to understand existing patterns and conventions
+- Generate complete, unambiguous implementation instructions that preserve existing behavior while adding new functionality
+- Ensure instructions are detailed enough for code generation without additional context
+
+Critical success factors:
+- PRECISION: Your instructions must be exact and leave no room for interpretation
+- COMPLETENESS: Include every detail needed for correct implementation
+- PATTERN ADHERENCE: Follow established SDK conventions and patterns from context files
+- FUNCTIONALITY: Ensure resulting implementations will be fully functional and properly integrated
+
 '''

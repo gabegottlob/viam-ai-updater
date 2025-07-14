@@ -1,18 +1,27 @@
 import os
+import argparse
+import subprocess
+import asyncio
+
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
-import argparse
-import subprocess
 
-from prompts.getrelevantcontext_prompts import GETRELEVANTCONTEXT_P, GETRELEVANTCONTEXT_S
+from ai_updater_utils import read_file_content, write_to_file, calculate_cost
+
+from prompts.getrelevantcontext_prompts import GETRELEVANTCONTEXT_P1, GETRELEVANTCONTEXT_P2, GETRELEVANTCONTEXT_S1, GETRELEVANTCONTEXT_S2
 from prompts.diffparser_prompts import DIFFPARSER_P, DIFFPARSER_S
 from prompts.generateimplementations_prompts import GENERATEIMPLEMENTATIONS_P, GENERATEIMPLEMENTATIONS_S
 
 class ContextFiles(BaseModel):
     """Model for storing the files that should be included as context."""
     file_paths: list[str]
-    explanation: list[str]
+
+class ContextInclusion(BaseModel):
+    """Model for whether or not a file should be included as context."""
+    filename: str
+    inclusion: bool
+    reasoning: str
 
 class RequiredChanges(BaseModel):
     """Model for storing analysis of code needed based on diff."""
@@ -21,35 +30,8 @@ class RequiredChanges(BaseModel):
 
 class GeneratedFiles(BaseModel):
     """Model for storing AI-generated file content."""
-    file_paths: list[str]
-    file_contents: list[str]
-
-def write_to_file(filepath: str, content: str) -> None:
-    """Write content to a file at the specified path. This will overwrite the existing file contents if it already exists.
-
-    Args:
-        filepath: Path to the file to write
-        content: Content to write to the file
-    """
-    print(f"Writing to: {filepath}")
-    with open(filepath, 'w') as f:
-        f.write(content)
-    print(f"Successfully wrote to: {filepath} \n")
-
-def read_file_content(file_path) -> str:
-    """Read and return the content of a file.
-
-    Args:
-        file_path: Path to the file to read
-
-    Returns:
-        str: Content of the file or error message if reading fails
-    """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    except Exception as e:
-        return f"Error reading file: {str(e)}"
+    file_path: str
+    file_content: str
 
 class AIUpdater:
     """Class for updating SDK code based on proto changes using AI."""
@@ -78,42 +60,21 @@ class AIUpdater:
         self.client = genai.Client(api_key=api_key)
         self.total_cost = 0.0
 
-    def calculate_cost(self, usage_metadata: types.GenerateContentResponse.UsageMetadata, model: str) -> float:
-        """Calculates the estimated cost of a Gemini response.
-
-        Args:
-            usage_metadata: The usage_metadata object from the Gemini response.
-            model: The name of the Gemini model used to generate the response.
-
-        Returns:
-            float: The estimated cost of the response.
-        """
-        if model == "gemini-2.5-flash":
-            INPUT_COST_PER_MILLION_TOKENS = 0.30
-            OUTPUT_COST_PER_MILLION_TOKENS = 2.50
-        else:
-            print(f"WARNING: {model} is not a supported model for cost calculation")
-            return 0.0
-
-        input_tokens = usage_metadata.prompt_token_count
-        output_tokens = usage_metadata.candidates_token_count
-
-        cost = (input_tokens / 1_000_000) * INPUT_COST_PER_MILLION_TOKENS + (output_tokens / 1_000_000) * OUTPUT_COST_PER_MILLION_TOKENS
-        return cost
-
-    def get_relevant_context(self, git_diff_output: str) -> types.GenerateContentResponse:
-        """Utilizes AI to gather relevant context files for analysis.
+    async def get_relevant_context(self, git_diff_output: str) -> list[ContextInclusion]:
+        """Two stage approach to use AI to gather the most relevant context files.
+        Stage 1: Gather all files that could be relevant to the changes.
+        Stage 2: Asynchronous AI calls are made to analyze each file to determine if it is actually relevant as context.
 
         Args:
             git_diff_output (str): Git diff output containing proto/code changes
 
         Returns:
-            GenerateContentResponse: Gemini LLM response containing relevant files
+            list[ContextInclusion]: List of ContextInclusion objects containing relevant files
         """
         sdk_tree_output = subprocess.check_output(["tree", os.path.join("src", "viam")], text=True, cwd=self.sdk_root_dir)
         tests_tree_output = subprocess.check_output(["tree", "tests"], text=True, cwd=self.sdk_root_dir)
 
-        prompt = GETRELEVANTCONTEXT_P.format(
+        prompt = GETRELEVANTCONTEXT_P1.format(
             sdk_tree_structure=sdk_tree_output,
             tests_tree_structure=tests_tree_output,
             git_diff_output=git_diff_output
@@ -127,16 +88,50 @@ class AIUpdater:
                 response_mime_type="application/json",
                 response_schema=ContextFiles,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
-                system_instruction=GETRELEVANTCONTEXT_S
+                system_instruction=GETRELEVANTCONTEXT_S1
             )
         )
-        print(f"Model version: {response.model_version}")
-        print(f"Token data from from context gathering call: {response.usage_metadata.total_token_count}\n")
-        self.total_cost += self.calculate_cost(response.usage_metadata, "gemini-2.5-flash")
-        return response
+        print(f"Finished get_relevant_context stage 1. Gemini model used: {response.model_version}")
+        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        if self.args.debug:
+            if self.args.work:
+                print(f"get_relevant_context stage 1 response: {response.text}")
+            elif self.args.test:
+                write_to_file(os.path.join(self.current_dir, "getrelevantcontext_stage1.txt"), str(response.text))
 
-    def get_diff_analysis(self, git_diff_output: str, relevant_files: list[str]) -> types.GenerateContentResponse:
-        """Analyze git diff using LLM to identify required code changes.
+        file_analysis = []
+        for file_path in response.parsed.file_paths:
+            file_content = f"File path: {file_path}\n" + read_file_content(os.path.join(self.sdk_root_dir, file_path))
+            prompt = GETRELEVANTCONTEXT_P2.format(
+                git_diff_output=git_diff_output,
+                file_content=file_content
+            )
+            file_analysis.append(self.client.aio.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.0,
+                    thinking_config=types.ThinkingConfig(thinking_budget=-1),
+                    system_instruction=GETRELEVANTCONTEXT_S2,
+                    response_schema=ContextInclusion,
+                    response_mime_type="application/json"
+                )
+            ))
+        file_analysis = await asyncio.gather(*file_analysis)
+        analysis_str = ""
+        for response in file_analysis:
+            analysis_str += response.text
+            self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        if self.args.debug:
+            if self.args.work:
+                print(f"get_relevant_context stage 2 response: {analysis_str}")
+            elif self.args.test:
+                write_to_file(os.path.join(self.current_dir, "getrelevantcontext_stage2.txt"), analysis_str)
+        print(f"Finished get_relevant_context stage 2. Gemini model used: {file_analysis[0].model_version}")
+        return [response.parsed for response in file_analysis]
+
+    def get_diff_analysis(self, git_diff_output: str, relevant_files: list[ContextInclusion]) -> types.GenerateContentResponse:
+        """Analyze git diff using AI to identify required code changes.
 
         Args:
             git_diff_output: Git diff output as string
@@ -148,17 +143,12 @@ class AIUpdater:
         # Gather relevant context files from the project and format them for the prompt
         relevant_context = ""
         for file in relevant_files:
-            file_path = os.path.join(self.sdk_root_dir, file)
-            file_content = read_file_content(file_path)
-            relevant_context += f"File: {file}\nContent: \n{file_content}\n--------------------------------\n"
+            if file.inclusion:
+                file_path = os.path.join(self.sdk_root_dir, file.filename)
+                file_content = read_file_content(file_path)
+                relevant_context += f"File: {file.filename}\nContent: \n{file_content}\n--------------------------------\n"
 
-        if self.args.debug and self.args.test:
-            write_to_file(os.path.join(self.current_dir, "relevantcontexttest.txt"), relevant_context)
-
-        # Format the prompt with gathered context
-        prompt = DIFFPARSER_P.format(selected_context_files=relevant_context, git_diff_output=git_diff_output)
-
-        # Generate content if AI is enabled, otherwise return empty response
+        prompt = DIFFPARSER_P.format(git_diff_output=git_diff_output, selected_context_files=relevant_context)
         response =self.client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
@@ -171,13 +161,16 @@ class AIUpdater:
             )
         )
 
-        # Count tokens for logging
-        print(f"Model version: {response.model_version}")
-        print(f"Token data from from diff analysis call: {response.usage_metadata.total_token_count}\n")
-        self.total_cost += self.calculate_cost(response.usage_metadata, "gemini-2.5-flash")
+        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        if self.args.debug:
+            if self.args.work:
+                print(f"get_diff_analysis response: {response.text}")
+            elif self.args.test:
+                write_to_file(os.path.join(self.current_dir, "getdiffanalysis.txt"), response.text)
+        print(f"Finished get_diff_analysis. Gemini model used: {response.model_version}")
         return response
 
-    def generate_implementations(self, diff_analysis: types.GenerateContentResponse):
+    async def generate_implementations(self, diff_analysis: types.GenerateContentResponse):
         """Generate implementation code based on diff analysis.
 
         Args:
@@ -186,23 +179,27 @@ class AIUpdater:
         # Parse the response from diff analysis (according to defined Pydantic model)
         parsed_response: RequiredChanges = diff_analysis.parsed
 
-        # Add existing files content to the prompt
-        existing_files_text = "\n=== EXISTING FILES ===\n"
-        for file_path in parsed_response.files_to_update:
+        if(len(parsed_response.files_to_update) != len(parsed_response.implementation_details)):
+            raise ValueError("ERROR: AI OUTPUT A DIFFERENT NUMBER OF FILENAMES THAN IMPLEMENTATION DETAILS")
+        if(len(parsed_response.files_to_update) == 0):
+            print("THE AI WORKFLOW DID NOT DETERMINE THAT ANY FILES NEED TO BE UPDATED BASED ON THE GIVEN PROTO UPDATE DIFF")
+            return
+
+        # Create a list of async AI prompts to generate the implementation for each individual file
+        generated_files = []
+        for i in range(len(parsed_response.files_to_update)):
+            file_path = parsed_response.files_to_update[i]
+            implementation_detail = parsed_response.implementation_details[i]
+            existing_file_content = ""
             try:
                 with open(os.path.join(self.sdk_root_dir, file_path), 'r') as f:
                     file_content = f.read()
-                    existing_files_text += f"\n=== {file_path} ===\n{file_content}\n"
+                    existing_file_content += f"\n=== {file_path} ===\n{file_content}\n"
             except FileNotFoundError:
-                print(f"Warning: File {file_path} not found. Skipping this file.")
-            except Exception as e:
-                print(f"Error reading file {file_path}: {str(e)}")
-
-        prompt = GENERATEIMPLEMENTATIONS_P.format(implementation_details=parsed_response.implementation_details, existing_files_text=existing_files_text)
-
-        # Generate and write files if AI is enabled
-        if not self.args.noai:
-            response = self.client.models.generate_content(
+                print(f"Warning: File {file_path} not found")
+                existing_file_content += f"\n=== {file_path} ===\nThis file does not exist in the repository. It will need to be created from scratch.\n"
+            prompt = GENERATEIMPLEMENTATIONS_P.format(implementation_detail=implementation_detail, existing_file_content=existing_file_content)
+            generated_files.append(self.client.aio.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -212,39 +209,27 @@ class AIUpdater:
                     thinking_config=types.ThinkingConfig(thinking_budget=0),
                     system_instruction=GENERATEIMPLEMENTATIONS_S
                 )
-                )
-            print(f"Model version: {response.model_version}")
-            print(f"Token data from from implementation generation call: {response.usage_metadata.total_token_count}\n")
-            self.total_cost += self.calculate_cost(response.usage_metadata, "gemini-2.5-flash")
+            ))
+        generated_files = await asyncio.gather(*generated_files)
+        #Calculate cost and write updated files to the repository
+        for response in generated_files:
+            self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+            file_path = response.parsed.file_path
+            original_file_dir = os.path.dirname(os.path.join(self.sdk_root_dir, file_path))
+            original_filename = os.path.basename(file_path)
+            filename_without_ext, file_ext = os.path.splitext(original_filename)
+            ai_filename = f"{filename_without_ext}{file_ext}"
+            if self.args.test:
+                dir_structure = os.path.relpath(original_file_dir, self.sdk_root_dir)
+                ai_generated_dir = os.path.join(os.path.dirname(self.sdk_root_dir), "ai_generated", dir_structure)
+                os.makedirs(ai_generated_dir, exist_ok=True)
+                ai_file_path = os.path.join(ai_generated_dir, ai_filename)
+            elif self.args.work:
+                ai_file_path = os.path.join(original_file_dir, ai_filename)
+            write_to_file(ai_file_path, response.parsed.file_content)
+        print(f"Finished generate_implementations. Gemini model used: {generated_files[0].model_version}")
 
-            # Write the generated content to files
-            parsed_response: GeneratedFiles = response.parsed
-            if self.args.debug and self.args.test:
-                write_to_file(os.path.join(self.current_dir, "generatedfilestest.txt"), response.text)
-
-            if(len(parsed_response.file_paths) != len(parsed_response.file_contents)):
-                raise ValueError("ERROR: AI OUTPUT A DIFFERENT NUMBER OF FILENAMES THAN GENERATED FILE CONTENTS")
-
-            if(len(parsed_response.file_paths) == 0):
-                print("THE AI WORKFLOW DID NOT DETERMINE THAT ANY FILES NEED TO BE UPDATED")
-                return
-
-            for index, file_path in enumerate(parsed_response.file_paths):
-                # Output AI generated files
-                original_file_dir = os.path.dirname(os.path.join(self.sdk_root_dir, file_path))
-                original_filename = os.path.basename(file_path)
-                filename_without_ext, file_ext = os.path.splitext(original_filename)
-                ai_filename = f"{filename_without_ext}{file_ext}"
-                if self.args.test:
-                    dir_structure = os.path.relpath(original_file_dir, self.sdk_root_dir)
-                    ai_generated_dir = os.path.join(os.path.dirname(self.sdk_root_dir), "ai_generated", dir_structure)
-                    os.makedirs(ai_generated_dir, exist_ok=True)
-                    ai_file_path = os.path.join(ai_generated_dir, ai_filename)
-                elif self.args.work:
-                    ai_file_path = os.path.join(original_file_dir, ai_filename)
-                write_to_file(ai_file_path, parsed_response.file_contents[index])
-
-    def run(self):
+    async def run(self):
         """Main execution method for the AI updater."""
         # Get diff and output (and write to file for debugging)
         # Note: the way I am currently doing git diff excludes the _pb2.py files because it clutters the diff and confuses the LLM
@@ -275,21 +260,11 @@ class AIUpdater:
             elif self.args.test:
                 write_to_file(os.path.join(self.current_dir, "gitdifftest.txt"), git_diff_output)
 
-        relevant_context = self.get_relevant_context(git_diff_output)
-        if self.args.debug:
-            if self.args.work:
-                print(f"Relevant context files: {relevant_context.text}")
-            elif self.args.test:
-                write_to_file(os.path.join(self.current_dir, "relevantcontextfilestest.txt"), str(relevant_context.text))
+        relevant_context = await self.get_relevant_context(git_diff_output)
 
-        diff_analysis = self.get_diff_analysis(git_diff_output, relevant_context.parsed.file_paths)
-        if self.args.debug:
-            if self.args.work:
-                print(f"Diff analysis: {diff_analysis.text}")
-            elif self.args.test:
-                write_to_file(os.path.join(self.current_dir, "diffanalysistest.txt"), diff_analysis.text)
+        diff_analysis = self.get_diff_analysis(git_diff_output, relevant_context)
 
-        self.generate_implementations(diff_analysis)
+        await self.generate_implementations(diff_analysis)
 
         print(f"\nTotal estimated cost for this run: ${self.total_cost:.4f}")
 
@@ -306,7 +281,7 @@ def main():
 
     # Create and run the updater
     updater = AIUpdater(args=args)
-    updater.run()
+    asyncio.run(updater.run())
 
 
 if __name__ == "__main__":

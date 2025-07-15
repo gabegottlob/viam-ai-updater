@@ -55,7 +55,7 @@ SCENARIOS = [
         "name": "scenario-4",
         "description": "Updated a version number",
         "pre_implementation_commit": "cd8765e9b2d6adcdeb7ecda6c2b72940d4439d0a",
-        "specific_proto_diff_file": False,
+        "specific_proto_diff_file": True,
         "repo_url": "git@github.com:viamrobotics/viam-python-sdk.git"
     }
 ]

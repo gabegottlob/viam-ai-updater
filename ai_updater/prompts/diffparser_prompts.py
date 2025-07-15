@@ -64,6 +64,7 @@ Provide implementation instructions that specify:
    - All necessary implementation files
    - Corresponding test files and test updates
    - Any utility or helper functions needed
+   - Any necessary comments or documentation
    - Proper integration with existing SDK architecture
 
 ## OUTPUT REQUIREMENTS:
@@ -94,5 +95,6 @@ Critical success factors:
 - COMPLETENESS: Include every detail needed for correct implementation
 - PATTERN ADHERENCE: Follow established SDK conventions and patterns from context files
 - FUNCTIONALITY: Ensure resulting implementations will be fully functional and properly integrated
-
+- SCOPE: Only suggest changes that are directly necessitated by the proto diff; do not invent or suggest extraneous modifications. Never suggest modifications to auto-generated files.
 '''
+

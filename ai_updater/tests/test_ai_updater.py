@@ -12,6 +12,10 @@ Proto update hashes to use as test cases:
 '''
 
 '''
+NOTE: The AI updater is inherently nondeterministic and hard to quantitatively test with a testing suite.
+While the following tests have basic assertions to ensure the AI generated certain files, they do not ensure that the AI generated the correct code.
+The reccomended method of testing is to run these tests and manually inspect the AI generated results compared to the expected human implementation.
+
 To run the tests via pytest, run the following command:
 pytest test_ai_updater.py
 or to specify specific scenarios, run the following command:
@@ -93,15 +97,17 @@ def _run_test_scenario(scenario, skip_comparison=True):
                 for file in files:
                     human_file = os.path.join(root, file)
                     rel_path = os.path.relpath(human_file, human_output_dir)
+                    if "__pycache__" in rel_path.split(os.sep):
+                        continue
                     ai_file = os.path.join(ai_generated_dir, rel_path)
                     assert os.path.exists(ai_file), f"AI did not generate expected file: {rel_path}"
 
 if __name__ == "__main__":
-    # print("Running all scenarios for debugging...")
-    # for scenario in SCENARIOS: #change this to run specific scenarios if desired
-    #     print(f"Running scenario: {scenario['name']}")
-    #     _run_test_scenario(scenario) # skip_comparison defaults to True for standalone run
+    print("Running all scenarios for debugging...")
+    for scenario in SCENARIOS: #change this to run specific scenarios if desired
+        print(f"Running scenario: {scenario['name']}")
+        _run_test_scenario(scenario) # skip_comparison defaults to True for standalone run
 
-    scenario = SCENARIOS[3]
-    print(f"Running scenario: {scenario['name']}")
-    _run_test_scenario(scenario)
+    # scenario = SCENARIOS[0]
+    # print(f"Running scenario: {scenario['name']}")
+    # _run_test_scenario(scenario)

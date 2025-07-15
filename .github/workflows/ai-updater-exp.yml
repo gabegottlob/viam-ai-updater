@@ -1,17 +1,15 @@
-name: Update SDK based on proto changes + open PR (for local testing with act)
+name: Update SDK based on proto changes + open PR
 
 on:
   workflow_dispatch:
   workflow_call:
     inputs:
       target_branch:
-        description: "The branch to update"
+        description: "The branch to base the update on"
         required: true
         type: string
     secrets:
       GOOGLE_API_KEY:
-        required: true
-      GITHUB_TOKEN: #this should only be necessary for local testing
         required: true
 
 jobs:
@@ -30,6 +28,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: gabegottlob/viam-ai-updater
+          ref: experiment
           path: viam-ai-updater
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -65,11 +64,12 @@ jobs:
         with:
           commit-message: '[WORKFLOW] AI update based on proto changes'
           path: sdk
-          branch: test/ai-updater
+          branch: workflow/ai-updater
           base: main
           title: AI update based on proto changes
-          body: This is an AI-generated PR to update the SDK based on proto changes.
+          body: This is an AI-generated PR to update the SDK based on proto changes. The AI may make mistakes so review carefully.
           assignees: gabegottlob
           reviewers: gabegottlob
+          team-reviewers: sdk-netcode
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: true

@@ -52,6 +52,7 @@ Provide implementation instructions that specify:
    - Which SDK components/services correspond to the changed protos
    - What new functionality needs to be implemented
    - What existing functionality needs to be updated
+   - What testing functionality needs to be added or updated
    - Which files contain similar implementations to use as patterns
 
 3. **Generate File-Specific Instructions**: For each file that needs changes:
@@ -64,8 +65,14 @@ Provide implementation instructions that specify:
    - All necessary implementation files
    - Corresponding test files and test updates
    - Any utility or helper functions needed
-   - Any necessary comments or documentation
+   - Any necessary comments or documentation (following SDK conventions)
    - Proper integration with existing SDK architecture
+
+## FINAL VERIFICATION:
+
+Before providing implementation instructions, take a moment to think through your proposed changes and ensure they are correct.
+Consider if they make sense in the broader context of the SDK and if there might be any issues you haven't considered yet.
+Ensure that your proposed changes are what an expert developer would write and consider correct, functional code.
 
 ## OUTPUT REQUIREMENTS:
 
@@ -93,7 +100,7 @@ Key responsibilities:
 Critical success factors:
 - PRECISION: Your instructions must be exact and leave no room for interpretation
 - COMPLETENESS: Include every detail needed for correct implementation
-- PATTERN ADHERENCE: Follow established SDK conventions and patterns from context files, including comments and docstrings
+- PATTERN ADHERENCE: Follow established SDK conventions and patterns from context files
 - FUNCTIONALITY: Ensure resulting implementations will be fully functional and properly integrated
 - SCOPE: Only suggest changes that are directly necessitated by the proto diff; do not invent or suggest extraneous modifications. Never suggest modifications to auto-generated files.
 '''

@@ -107,7 +107,3 @@ if __name__ == "__main__":
     for scenario in SCENARIOS: #change this to run specific scenarios if desired
         print(f"Running scenario: {scenario['name']}")
         _run_test_scenario(scenario) # skip_comparison defaults to True for standalone run
-
-    # scenario = SCENARIOS[0]
-    # print(f"Running scenario: {scenario['name']}")
-    # _run_test_scenario(scenario)

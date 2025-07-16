@@ -93,7 +93,7 @@ Key responsibilities:
 Critical success factors:
 - PRECISION: Your instructions must be exact and leave no room for interpretation
 - COMPLETENESS: Include every detail needed for correct implementation
-- PATTERN ADHERENCE: Follow established SDK conventions and patterns from context files
+- PATTERN ADHERENCE: Follow established SDK conventions and patterns from context files, including comments and docstrings
 - FUNCTIONALITY: Ensure resulting implementations will be fully functional and properly integrated
 - SCOPE: Only suggest changes that are directly necessitated by the proto diff; do not invent or suggest extraneous modifications. Never suggest modifications to auto-generated files.
 '''

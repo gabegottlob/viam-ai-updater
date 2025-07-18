@@ -1,14 +1,16 @@
-def write_to_file(filepath: str, content: str) -> None:
+def write_to_file(filepath: str, content: str, quiet: bool = False) -> None:
     """Write content to a file at the specified path. This will overwrite the existing file contents if it already exists.
 
     Args:
         filepath: Path to the file to write
         content: Content to write to the file
     """
-    print(f"Writing to: {filepath}")
+    if not quiet:
+        print(f"Writing to: {filepath}")
     with open(filepath, 'w') as f:
         f.write(content)
-    print(f"Successfully wrote to: {filepath} \n")
+    if not quiet:
+        print(f"Successfully wrote to: {filepath} \n")
 
 def read_file_content(file_path) -> str:
     """Read and return the content of a file.

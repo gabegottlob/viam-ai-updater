@@ -14,24 +14,49 @@ from prompts.diffparser_prompts import DIFFPARSER_P, DIFFPARSER_S
 from prompts.generateimplementations_prompts import GENERATEIMPLEMENTATIONS_P, GENERATEIMPLEMENTATIONS_S
 
 class ContextFiles(BaseModel):
-    """Model for storing the files that should be included as context."""
+    """Model for storing the files that should be analyzed as potential context.
+    file_paths: The paths to the files that could be relevant to the changes.
+    """
     file_paths: list[str]
 
 class ContextInclusion(BaseModel):
-    """Model for whether or not a file should be included as context."""
+    """Model for whether or not a file should be included as context.
+    filename: The path to the file.
+    inclusion: Whether or not the file should be included as context.
+    reasoning: The reasoning for why the file should be included as context.
+    """
     filename: str
     inclusion: bool
     reasoning: str
 
 class RequiredChanges(BaseModel):
-    """Model for storing analysis of code needed based on diff."""
+    """Model for storing analysis of code needed based on diff.
+    files_to_update: The paths to the files that need to be updated.
+    implementation_details: The details of the changes to be made to the files.
+    create_new_files: Whether or not new files need to be created.
+    """
     files_to_update: list[str]
     implementation_details: list[str]
+    create_new_files: list[bool]
 
 class GeneratedFiles(BaseModel):
-    """Model for storing AI-generated file content."""
+    """Model for storing AI-generated file content.
+    file_path: The path to the file.
+    file_content: The entire content of the file.
+    """
     file_path: str
     file_content: str
+
+class GeneratedPatch(BaseModel):
+    """Model for storing AI-generated patch content.
+    file_path: The path to the file.
+    replace_text: List of text to replace.
+    with_text: List of text to replace with.
+    """
+    file_path: str
+    replace_text: list[str]
+    with_text: list[str]
+
 
 class AIUpdater:
     """Class for updating SDK code based on proto changes using AI."""
@@ -131,7 +156,8 @@ class AIUpdater:
         return [response.parsed for response in file_analysis]
 
     def get_diff_analysis(self, git_diff_output: str, relevant_files: list[ContextInclusion]) -> types.GenerateContentResponse:
-        """Analyze git diff using AI to identify required code changes.
+        """Analyze git diff using AI to identify required code changes. Outputs a list of files that need to be updated
+        or created, and detailed instructions for the changes to be made to the files.
 
         Args:
             git_diff_output: Git diff output as string
@@ -217,17 +243,24 @@ class AIUpdater:
             file_path = response.parsed.file_path
             original_file_dir = os.path.dirname(os.path.join(self.sdk_root_dir, file_path))
             original_filename = os.path.basename(file_path)
-            filename_without_ext, file_ext = os.path.splitext(original_filename)
-            ai_filename = f"{filename_without_ext}{file_ext}"
             if self.args.test:
                 dir_structure = os.path.relpath(original_file_dir, self.sdk_root_dir)
                 ai_generated_dir = os.path.join(os.path.dirname(self.sdk_root_dir), "ai_generated", dir_structure)
                 os.makedirs(ai_generated_dir, exist_ok=True)
-                ai_file_path = os.path.join(ai_generated_dir, ai_filename)
+                ai_file_path = os.path.join(ai_generated_dir, original_filename)
             elif self.args.work:
-                ai_file_path = os.path.join(original_file_dir, ai_filename)
+                ai_file_path = os.path.join(original_file_dir, original_filename)
             write_to_file(ai_file_path, response.parsed.file_content)
         print(f"Finished generate_implementations. Gemini model used: {generated_files[0].model_version}")
+
+    async def generate_code(self, diff_analysis: types.GenerateContentResponse):
+        """Generate code based on diff analysis. If a file needs to be modified, it will be
+        patched using find and replace. If a new file needs to be created it will be generated from scratch.
+        If the find and replace patch fails, the system will fallback and the file will be completely regenerated
+        Args:
+            diff_analysis: LLM response from diff analysis
+        """
+        pass
 
     async def run(self):
         """Main execution method for the AI updater."""

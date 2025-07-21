@@ -41,6 +41,18 @@ def calculate_cost(usage_metadata, model: str) -> float:
     if model == "gemini-2.5-flash":
         INPUT_COST_PER_MILLION_TOKENS = 0.30
         OUTPUT_COST_PER_MILLION_TOKENS = 2.50
+    elif model == "gemini-2.0-flash":
+        INPUT_COST_PER_MILLION_TOKENS = 0.10
+        OUTPUT_COST_PER_MILLION_TOKENS = 0.40
+    elif model == "gemini-2.5-pro":
+        if usage_metadata.prompt_token_count > 200000:
+            INPUT_COST_PER_MILLION_TOKENS = 2.50
+        else:
+            INPUT_COST_PER_MILLION_TOKENS = 1.25
+        if usage_metadata.candidates_token_count > 200000:
+            OUTPUT_COST_PER_MILLION_TOKENS = 15.00
+        else:
+            OUTPUT_COST_PER_MILLION_TOKENS = 10.00
     else:
         print(f"WARNING: {model} is not a supported model for cost calculation")
         return 0.0

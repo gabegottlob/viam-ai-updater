@@ -102,7 +102,7 @@ class AIUpdater:
         )
 
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
@@ -128,7 +128,7 @@ class AIUpdater:
                 file_content=file_content
             )
             file_analysis.append(self.client.aio.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-2.5-pro",
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.0,
@@ -172,7 +172,7 @@ class AIUpdater:
 
         prompt = DIFFPARSER_P.format(git_diff_output=git_diff_output, selected_context_files=relevant_context)
         response =self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
@@ -224,7 +224,7 @@ class AIUpdater:
                 temperature=0.0,
                 response_mime_type="application/json",
                 response_schema=response_schema,
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 system_instruction=system_prompt
             )
         )
@@ -285,6 +285,7 @@ class AIUpdater:
             requires_creation = parsed_response.requires_creation[i]
             required_changes.append(self.apply_change(file_path=file_path, implementation_detail=implementation_detail, requires_creation=requires_creation))
         await asyncio.gather(*required_changes)
+        print(f"Finished applying changes. Gemini model used: gemini-2.5-pro")
 
     async def run(self):
         """Main execution method for the AI updater."""

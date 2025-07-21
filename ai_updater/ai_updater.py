@@ -11,7 +11,7 @@ from ai_updater_utils import read_file_content, write_to_file, calculate_cost
 
 from prompts.getrelevantcontext_prompts import GETRELEVANTCONTEXT_P1, GETRELEVANTCONTEXT_P2, GETRELEVANTCONTEXT_S1, GETRELEVANTCONTEXT_S2
 from prompts.diffparser_prompts import DIFFPARSER_P, DIFFPARSER_S
-from prompts.generateimplementations_prompts import GENERATEIMPLEMENTATIONS_P, GENERATEIMPLEMENTATIONS_S
+from prompts.applychanges_prompts import GENERATECOMPLETEFILE_P, GENERATECOMPLETEFILE_S, GENERATEPATCH_P, GENERATEPATCH_S
 
 class ContextFiles(BaseModel):
     """Model for storing the files that should be analyzed as potential context.
@@ -33,27 +33,23 @@ class RequiredChanges(BaseModel):
     """Model for storing analysis of code needed based on diff.
     files_to_update: The paths to the files that need to be updated.
     implementation_details: The details of the changes to be made to the files.
-    create_new_files: Whether or not new files need to be created.
+    requires_creation: Whether each file needs to be created from scratch (True) or already exists and needs updating (False).
     """
     files_to_update: list[str]
     implementation_details: list[str]
-    create_new_files: list[bool]
+    requires_creation: list[bool]
 
-class GeneratedFiles(BaseModel):
+class GeneratedFile(BaseModel):
     """Model for storing AI-generated file content.
-    file_path: The path to the file.
     file_content: The entire content of the file.
     """
-    file_path: str
     file_content: str
 
 class GeneratedPatch(BaseModel):
     """Model for storing AI-generated patch content.
-    file_path: The path to the file.
     replace_text: List of text to replace.
     with_text: List of text to replace with.
     """
-    file_path: str
     replace_text: list[str]
     with_text: list[str]
 
@@ -196,11 +192,82 @@ class AIUpdater:
         print(f"Finished get_diff_analysis. Gemini model used: {response.model_version}")
         return response
 
-    async def generate_implementations(self, diff_analysis: types.GenerateContentResponse):
-        """Generate implementation code based on diff analysis.
+    async def apply_change(self, file_path: str, implementation_detail: str, requires_creation: bool, fallback: bool = False):
+        """Applies the AI suggested changes to a single file. If the file needs to be created from scratch,
+        the file will be completely regenerated. If the file already exists, the file will be patched
+        (if the patch generation fails, the file will be completely regenerated as a fallback).
 
         Args:
-            diff_analysis: LLM response from diff analysis
+            file_path: The path to the file that needs to be updated.
+            implementation_detail: The details of the changes to be made to the file.
+            requires_creation: Whether or not the file needs to be created from scratch.
+            fallback: Whether this is a fallback call from failed patching.
+        """
+        existing_file_content = f"=== {file_path} ===\n"
+        if requires_creation:
+            if fallback:
+                existing_file_content += read_file_content(os.path.join(self.sdk_root_dir, file_path))
+            else:
+                existing_file_content += f"This file does not exist in the repository. It will need to be created from scratch.\n"
+            prompt = GENERATECOMPLETEFILE_P.format(implementation_detail=implementation_detail, existing_file_content=existing_file_content)
+            system_prompt = GENERATECOMPLETEFILE_S
+            response_schema = GeneratedFile
+        else:
+            existing_file_content += read_file_content(os.path.join(self.sdk_root_dir, file_path))
+            prompt = GENERATEPATCH_P.format(implementation_detail=implementation_detail, existing_file_content=existing_file_content)
+            system_prompt = GENERATEPATCH_S
+            response_schema = GeneratedPatch
+        response = await self.client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+                response_mime_type="application/json",
+                response_schema=response_schema,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                system_instruction=system_prompt
+            )
+        )
+        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        original_file_dir = os.path.dirname(os.path.join(self.sdk_root_dir, file_path))
+        original_filename = os.path.basename(file_path)
+        if self.args.test:
+            dir_structure = os.path.relpath(original_file_dir, self.sdk_root_dir)
+            ai_generated_dir = os.path.join(os.path.dirname(self.sdk_root_dir), "ai_generated", dir_structure)
+            os.makedirs(ai_generated_dir, exist_ok=True)
+            ai_file_path = os.path.join(ai_generated_dir, original_filename)
+        elif self.args.work:
+            ai_file_path = os.path.join(original_file_dir, original_filename)
+        if requires_creation:
+            write_to_file(ai_file_path, response.parsed.file_content)
+        else:
+            try:
+                patched_content = read_file_content(os.path.join(self.sdk_root_dir, file_path))
+                for r, w in zip(response.parsed.replace_text, response.parsed.with_text, strict=True):
+                    if patched_content.count(r) != 1:
+                        raise ValueError(f"ERROR: The search text either does not exist or exists more than once in the file.")
+                    if r == "":
+                        raise ValueError(f"ERROR: The search text is empty.")
+                    patched_content = patched_content.replace(r, w)
+                write_to_file(ai_file_path, patched_content, quiet=True)
+                print(f"Patched {ai_file_path}\n")
+            except Exception as e:
+                print(f"Error applying patch to {file_path}: {e}\nFalling back to complete file generation.\n")
+                await self.apply_change(file_path=file_path, implementation_detail=implementation_detail, requires_creation=True, fallback=True)
+
+    async def apply_changes(self, diff_analysis: types.GenerateContentResponse):
+        """Apply all code changes suggested by the AI by choosing the appropriate update strategy for each file.
+
+        This is the main orchestrator method that determines the best approach for each file:
+        - For new files: uses create_complete_files()
+        - For existing files needing targeted updates: uses create_patches() first
+        - Falls back to create_complete_files() if patching fails
+
+        The method analyzes the diff_analysis response to determine which files need updates
+        and selects the most appropriate generation strategy for each file.
+
+        Args:
+            diff_analysis: LLM response from diff analysis containing file update requirements
         """
         # Parse the response from diff analysis (according to defined Pydantic model)
         parsed_response: RequiredChanges = diff_analysis.parsed
@@ -211,56 +278,13 @@ class AIUpdater:
             print("THE AI WORKFLOW DID NOT DETERMINE THAT ANY FILES NEED TO BE UPDATED BASED ON THE GIVEN PROTO UPDATE DIFF")
             return
 
-        # Create a list of async AI prompts to generate the implementation for each individual file
-        generated_files = []
+        required_changes = []
         for i in range(len(parsed_response.files_to_update)):
             file_path = parsed_response.files_to_update[i]
             implementation_detail = parsed_response.implementation_details[i]
-            existing_file_content = ""
-            try:
-                with open(os.path.join(self.sdk_root_dir, file_path), 'r') as f:
-                    file_content = f.read()
-                    existing_file_content += f"\n=== {file_path} ===\n{file_content}\n"
-            except FileNotFoundError:
-                print(f"Warning: File {file_path} not found")
-                existing_file_content += f"\n=== {file_path} ===\nThis file does not exist in the repository. It will need to be created from scratch.\n"
-            prompt = GENERATEIMPLEMENTATIONS_P.format(implementation_detail=implementation_detail, existing_file_content=existing_file_content)
-            generated_files.append(self.client.aio.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.0,
-                    response_mime_type="application/json",
-                    response_schema=GeneratedFiles,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
-                    system_instruction=GENERATEIMPLEMENTATIONS_S
-                )
-            ))
-        generated_files = await asyncio.gather(*generated_files)
-        #Calculate cost and write updated files to the repository
-        for response in generated_files:
-            self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
-            file_path = response.parsed.file_path
-            original_file_dir = os.path.dirname(os.path.join(self.sdk_root_dir, file_path))
-            original_filename = os.path.basename(file_path)
-            if self.args.test:
-                dir_structure = os.path.relpath(original_file_dir, self.sdk_root_dir)
-                ai_generated_dir = os.path.join(os.path.dirname(self.sdk_root_dir), "ai_generated", dir_structure)
-                os.makedirs(ai_generated_dir, exist_ok=True)
-                ai_file_path = os.path.join(ai_generated_dir, original_filename)
-            elif self.args.work:
-                ai_file_path = os.path.join(original_file_dir, original_filename)
-            write_to_file(ai_file_path, response.parsed.file_content)
-        print(f"Finished generate_implementations. Gemini model used: {generated_files[0].model_version}")
-
-    async def generate_code(self, diff_analysis: types.GenerateContentResponse):
-        """Generate code based on diff analysis. If a file needs to be modified, it will be
-        patched using find and replace. If a new file needs to be created it will be generated from scratch.
-        If the find and replace patch fails, the system will fallback and the file will be completely regenerated
-        Args:
-            diff_analysis: LLM response from diff analysis
-        """
-        pass
+            requires_creation = parsed_response.requires_creation[i]
+            required_changes.append(self.apply_change(file_path=file_path, implementation_detail=implementation_detail, requires_creation=requires_creation))
+        await asyncio.gather(*required_changes)
 
     async def run(self):
         """Main execution method for the AI updater."""
@@ -284,7 +308,7 @@ class AIUpdater:
                                                   cwd=self.sdk_root_dir)
 
         if git_diff_output == "":
-            print("There were no changes detected that required an update to the SDK. Exiting.")
+            print("There were no proto changes detected that required an update to the SDK. Exiting.")
             return
 
         if self.args.debug:
@@ -297,7 +321,8 @@ class AIUpdater:
 
         diff_analysis = self.get_diff_analysis(git_diff_output, relevant_context)
 
-        await self.generate_implementations(diff_analysis)
+        if not self.args.noai:
+            await self.apply_changes(diff_analysis)
 
         print(f"\nTotal estimated cost for this run: ${self.total_cost:.4f}")
 

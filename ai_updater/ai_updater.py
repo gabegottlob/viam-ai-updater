@@ -102,7 +102,7 @@ class AIUpdater:
         )
 
         response = self.client.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
@@ -128,7 +128,7 @@ class AIUpdater:
                 file_content=file_content
             )
             file_analysis.append(self.client.aio.models.generate_content(
-                model="gemini-2.5-pro",
+                model="gemini-2.5-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.0,
@@ -172,7 +172,7 @@ class AIUpdater:
 
         prompt = DIFFPARSER_P.format(git_diff_output=git_diff_output, selected_context_files=relevant_context)
         response =self.client.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
@@ -218,13 +218,13 @@ class AIUpdater:
             system_prompt = GENERATEPATCH_S
             response_schema = GeneratedPatch
         response = await self.client.aio.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
                 response_mime_type="application/json",
                 response_schema=response_schema,
-                thinking_config=types.ThinkingConfig(thinking_budget=-1),
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
                 system_instruction=system_prompt
             )
         )
@@ -242,10 +242,14 @@ class AIUpdater:
             write_to_file(ai_file_path, response.parsed.file_content)
         else:
             try:
+                if self.args.debug:
+                    write_to_file(os.path.join(self.current_dir, "applypatch.txt"), response.text)
                 patched_content = read_file_content(os.path.join(self.sdk_root_dir, file_path))
                 for r, w in zip(response.parsed.replace_text, response.parsed.with_text, strict=True):
-                    if patched_content.count(r) != 1:
-                        raise ValueError(f"ERROR: The search text either does not exist or exists more than once in the file.")
+                    if patched_content.count(r) == 0:
+                        raise ValueError(f"ERROR: The search text does not exist in the file.")
+                    if patched_content.count(w) > 1:
+                        raise ValueError(f"ERROR: The replacement text appears multiple times in the file.")
                     if r == "":
                         raise ValueError(f"ERROR: The search text is empty.")
                     patched_content = patched_content.replace(r, w)
@@ -285,7 +289,7 @@ class AIUpdater:
             requires_creation = parsed_response.requires_creation[i]
             required_changes.append(self.apply_change(file_path=file_path, implementation_detail=implementation_detail, requires_creation=requires_creation))
         await asyncio.gather(*required_changes)
-        print(f"Finished applying changes. Gemini model used: gemini-2.5-pro")
+        print(f"Finished applying changes. Gemini model used: gemini-2.5-flash")
 
     async def run(self):
         """Main execution method for the AI updater."""

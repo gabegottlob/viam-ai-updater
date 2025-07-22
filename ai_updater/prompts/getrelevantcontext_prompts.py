@@ -41,15 +41,21 @@ TEST FILES:
 - Mock implementations and test helpers
 
 SELECTION PHILOSOPHY:
-- Prioritize completeness over minimalism - include files that provide important context
-- Better to include relevant context that might not be strictly necessary than to miss crucial information
-- Include files that help understand the "why" and "how" of existing implementations
-- Consider dependencies and relationships, but stay focused on the proto changes
-- Think about what a developer would need to implement changes correctly and consistently
+- **Err on the side of inclusion:** If there is any reasonable chance a file could be relevant, include it. It is much better to include extra files than to risk missing one that is important.
+- **Avoid under-inclusion:** Missing a file that could be relevant is a critical error. Over-inclusion is acceptable and even encouraged, and will be corrected in the next stage.
+- **Include files with even indirect or possible relevance:** If a file shares patterns, utilities, or dependencies with the changed functionality—even if not directly referenced—include it.
+- **Borderline cases:** If you are unsure whether a file is relevant, include it.
+- **The next stage will refine this list:** Your job is to provide a comprehensive set of candidates, not to make the final decision on relevance.
+
+EXAMPLES OF FILES TO INCLUDE:
+- Files that implement, use, or are used by the changed functionality.
+- Files that define types, interfaces, or schemas used anywhere in the affected area.
+- Utility, helper, or base files that are imported by or import the changed code.
+- Test files, fixtures, and test utilities that might exercise or support the changed code.
+- Files that demonstrate similar patterns, even if for different features.
+- Any file that a developer might consult to understand conventions, dependencies, or best practices for the affected area.
 
 Your output should be a list of file paths.
-The next LLM in the chain will use your output to gather code from these files and analyze what specific code changes need to be implemented.
-
 
 Here is the tree structure of the SDK:
 {sdk_tree_structure}
@@ -62,16 +68,7 @@ Finally, here are the changes to the proto files (provided as a git diff):
 
 Task Review:
 Based on the git diff provided, please analyze which files contain code that is most relevant to the changes being made.
-
-Your selection of files for context should cast a WIDE NET to capture all potentially relevant files. Think beyond just the directly impacted files and consider:
-- What would a developer need to understand to implement these changes correctly?
-- What patterns and conventions should be followed?
-- What dependencies and relationships exist?
-- What testing approaches are used for similar functionality?
-
-Be generous in your file selection - it's much better to include extra context than to miss something important that could lead to incorrect implementations.
-
-In total, your selected files should provide the next AI stage with a comprehensive understanding of existing patterns, dependencies, and conventions to accurately implement the required code changes based on the proto diff.
+Be generous in your file selection - it's much better to include extra context and is a critical error to miss something important that could lead to incorrect implementations.
 '''
 
 GETRELEVANTCONTEXT_P2 = '''

@@ -37,6 +37,7 @@ Provide implementation instructions that specify:
 - Any and all implementation logic
 - Where in the file to place new code (e.g., "Add method after line X" or "Add to end of class Y")
 - Any existing code that needs modification and exactly how to change it
+IMPORTANT: Never suggest any changes to auto-generated files.
 
 **FOR NEW FILES:**
 - Explicitly state "This is a new file that needs to be created from scratch"
@@ -80,6 +81,8 @@ Your response must contain:
 - `files_to_update`: List of file paths that need modification or creation
 - `implementation_details`: List of detailed implementation instructions (one per file, same order as files_to_update)
 - `create_new_files`: List of booleans indicating whether or not to create a new file for each file in `files_to_update`
+
+Your output should only include files that need changes. Never include files that do not need changes. Never suggest any changes to auto-generated files.
 
 The implementation instructions will be the ONLY information provided to Stage 3. They must be comprehensive enough for an AI to implement correct, functional code without any additional context or clarification.
 

@@ -53,8 +53,15 @@ SCENARIOS = [
     },
     {
         "name": "scenario-4",
-        "description": "Updated a version number",
+        "description": "Updated a version number (no changes needed)",
         "pre_implementation_commit": "cd8765e9b2d6adcdeb7ecda6c2b72940d4439d0a",
+        "specific_proto_diff_file": True,
+        "repo_url": "git@github.com:viamrobotics/viam-python-sdk.git"
+    },
+    {
+        "name": "scenario-5",
+        "description": "Single field update that leads to many small changes in long file",
+        "pre_implementation_commit": "60b58ca3a0589da2d11cc9c04924c6567a0ce9fc",
         "specific_proto_diff_file": True,
         "repo_url": "git@github.com:viamrobotics/viam-python-sdk.git"
     }
@@ -104,6 +111,6 @@ def _run_test_scenario(scenario, skip_comparison=True):
 
 if __name__ == "__main__":
     print("Running all scenarios for debugging...")
-    for scenario in SCENARIOS: #change this to run specific scenarios if desired
+    for scenario in SCENARIOS[4:5]: #change this to run specific scenarios if desired
         print(f"Running scenario: {scenario['name']}")
         _run_test_scenario(scenario) # skip_comparison defaults to True for standalone run

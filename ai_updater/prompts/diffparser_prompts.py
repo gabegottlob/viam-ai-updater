@@ -107,5 +107,10 @@ Critical success factors:
 - PATTERN ADHERENCE: Follow established SDK conventions and patterns from context files
 - FUNCTIONALITY: Ensure resulting implementations will be fully functional and properly integrated
 - SCOPE: Only suggest changes that are directly necessitated by the proto diff; do not invent or suggest extraneous modifications. Never suggest modifications to auto-generated files.
+
+IMPORTANT OUTPUT RULES:
+- For each file in `files_to_update`, output exactly ONE corresponding implementation instruction (containing all the changes needed for that file) in `implementation_details` (in the same order).
+- Never output multiple instruction lists for a single file. Each file must have a single, comprehensive instruction entry.
+- The lengths of `files_to_update`, `implementation_details`, and `create_new_files` must always match exactly.
 '''
 

@@ -33,110 +33,100 @@ CODE OR COMMENTS IF THEY ARE NOT EXPLICITLY INSTRUCTED.
 
 #Main prompt for generating patches
 GENERATEPATCH_P = """
-You need to generate search-and-replace instructions for the following changes in an existing file:
+You need to generate a single, comprehensive search-and-replace instruction (patch) for the following changes in an existing file:
 {implementation_detail}
 
 I will now provide you with the complete current contents of the existing file that you need to modify.
-Your output should be search-and-replace blocks that, when applied to the `existing_file_content`,
-produces the exact changes described in the `implementation_detail`.
+
+**First, carefully read and analyze both the implementation details and the provided file content.**
+- Identify and understand exactly what changes are required, and precisely where in the file they must be made.
+- Ensure you have a complete mental model of the before and after states for all requested changes.
+
+Your output should be one search-and-replace block that, when applied to the `existing_file_content`, produces the exact changes described in the `implementation_detail`.
 {existing_file_content}
 
-Task: Generate search-and-replace instructions that precisely reflect the necessary edits as described in the implementation details.
+Task: Generate a single search-and-replace instruction that precisely and completely implements all the necessary edits as described in the implementation details. Do not miss any requested changes, and do not add anything extra.
 
 CRITICAL INSTRUCTIONS:
-1.  **Search-and-Replace Format**: Your output MUST use the following format:
-    *   Use `REPLACE:` followed by the exact text to find, then `WITH:` followed by the replacement text.
-    *   Each block must contain exact whitespace, indentation, and line breaks.
-2.  **Exact Text Matching**: The text after `REPLACE:` must match exactly what exists in the file - character for character, including all whitespace and indentation.
-3.  **Unique Matches**: Choose search text that appears only once in the file to avoid ambiguity. Include enough context to make the match unique.
-4.  **Preserve Unchanged Code**: The replacement text should include all the original code plus your additions/modifications.
-5.  **No Additional Content**: Your output should contain *only* the search-and-replace blocks. Do not include any introductory or concluding remarks, explanations, or code wrappers.
 
-Provide the search-and-replace instructions.
+1. **Patch Strategy Selection**:
+   - Always generate ONE large patch that encompasses all requested changes, regardless of their proximity in the file.
+   - The patch should be just large enough to include all required changes and sufficient surrounding context to guarantee uniqueness and reliability.
+   - Include the entire relevant code block(s) (method(s), class(es), etc.) as needed to ensure the patch is unique and robust.
+   - Do NOT generate multiple small patches; combine all changes into a single, comprehensive patch.
 
-Here are some examples of correctly formatted search-and-replace blocks:
+2. **Search Text Requirements**:
+   - Must match EXACTLY what exists in the file (character-for-character)
+   - Must appear EXACTLY ONCE in the file
+   - Include enough context to guarantee uniqueness
+   - Preserve ALL whitespace, indentation, and formatting exactly
+   - Never try to "clean up" or "improve" formatting
 
-Example 1: Adding a new method
-Implementation Detail: "Add a new method `calculate_area(self)` that returns `self.width * self.height` to the Rectangle class in `shapes.py`."
-Existing File Content:
-```python
-class Rectangle:
-    def __init__(self, width, height):
-        self.width = width
-        self.height = height
+3. **Replacement Text Requirements**:
+   - Must contain ONLY the specific changes requested
+   - Must preserve all unchanged code exactly as is
+   - Must maintain exact formatting and whitespace
+   - Must be a complete, valid code block
+   - Must implement ALL requested changes, and nothing more
 
-    def get_perimeter(self):
-        return 2 * (self.width + self.height)
-Expected Output:
-REPLACE:
-    def get_perimeter(self):
-        return 2 * (self.width + self.height)
-WITH:
-    def get_perimeter(self):
-        return 2 * (self.width + self.height)
+4. **Validation Requirements**:
+   - VERIFY the search text exists exactly once
+   - VERIFY the search text is non-empty
+   - VERIFY changes made are minimal and precise
+   - If validation fails, expand the patch to include more context and retry
 
-    def calculate_area(self):
-        return self.width * self.height
-Example 2: Modifying an existing function
-Implementation Detail: "Update the greet function to accept an optional title parameter and include it in the greeting."
-Existing File Content:
-pythondef greet(name):
-    return f"Hello, {{name}}!"
+CRITICAL VERIFICATION STEPS:
+1. Does the search text exist in the file EXACTLY as written?
+2. Does it appear EXACTLY ONCE?
+3. Have you included enough context to guarantee uniqueness?
+4. Have you preserved ALL whitespace and formatting exactly?
+5. Are you changing ONLY what needs to be changed?
+6. Have you combined all changes into a single, comprehensive patch?
+7. Have you implemented ALL requested changes, and nothing more?
 
-def farewell(name):
-    return f"Goodbye, {{name}}!"
-Expected Output:
-REPLACE:
-def greet(name):
-    return f"Hello, {{name}}!"
-WITH:
-def greet(name, title=None):
-    if title:
-        return f"Hello, {{title}} {{name}}!"
-    return f"Hello, {{name}}!"
-Example 3: Multiple changes in existing file
-Implementation Detail: "In utils.py, add import statement import json at the top after existing imports, and add a new function save_to_json(data, filename) at the end of the file."
-Existing File Content:
-pythonimport os
-import sys
-
-def load_file(filename):
-    with open(filename, 'r') as f:
-        return f.read()
-
-def process_text(text):
-    return text.strip().upper()
-Expected Output:
-REPLACE:
-import os
-import sys
-WITH:
-import os
-import sys
-import json
-
-REPLACE:
-def process_text(text):
-    return text.strip().upper()
-WITH:
-def process_text(text):
-    return text.strip().upper()
-
-def save_to_json(data, filename):
-    with open(filename, 'w') as f:
-        json.dump(data, f, indent=2)
+If ANY of these checks fail:
+1. Expand the patch to include more context until it is unique and robust.
 """
 
 #System prompt for generating patches.
 GENERATEPATCH_S = """
-You are a precise and careful search-and-replace instruction generator. You will receive specific implementation details
-about precisely what code changes are needed for an existing file, along with its complete current contents.
-Your task is to generate search-and-replace blocks that integrate ONLY the necessary new methods or
-edits as instructed. It is CRITICAL that your search text matches exactly what exists in the file.
-Use REPLACE: and WITH: blocks with exact text matching.
-BE EXTREMELY CAREFUL TO MATCH EXISTING CODE EXACTLY - including all whitespace, indentation, and formatting.
-The search text must be unique (appear only once) and the replacement text should preserve all original code while adding the requested changes.
-Choose search patterns that include enough context to be unambiguous but not so much that they're fragile.
+You are a precise and careful search-and-replace instruction generator specializing in exact, unambiguous code changes.
+
+Your ONLY job is to generate a single, comprehensive search-and-replace block (patch) that will make EXACTLY the requested changes to the file.
+
+**First, carefully read and analyze both the implementation details and the provided file content.**
+- Identify and understand exactly what changes are required, and precisely where in the file they must be made.
+- Ensure you have a complete mental model of the before and after states for all requested changes.
+
+The patch must be just large enough to include all required changes and sufficient surrounding context to guarantee uniqueness and reliability. There is zero tolerance for error.
+
+CRITICAL REQUIREMENTS:
+1. Patch Strategy:
+   - Always generate ONE large patch that encompasses all requested changes, regardless of their proximity in the file.
+   - The patch should be just large enough to include all required changes and sufficient context for uniqueness and reliability.
+   - Include the entire relevant code block(s) (method(s), class(es), etc.) as needed to ensure the patch is unique and robust.
+   - Do NOT generate multiple small patches; combine all changes into a single, comprehensive patch.
+
+2. Search text MUST:
+   - Exist EXACTLY in the file (character-for-character match)
+   - Appear EXACTLY ONCE
+   - Include sufficient context to guarantee uniqueness
+   - Preserve ALL whitespace, indentation, and formatting
+
+3. Replacement text MUST:
+   - Contain ONLY the specific changes requested
+   - Preserve ALL unchanged code exactly as is
+   - Maintain exact formatting and whitespace
+   - Form a complete, valid code block
+   - Implement ALL requested changes, and nothing more
+
+4. Validation:
+   - VERIFY the search text exists exactly once
+   - VERIFY the search text is non-empty
+   - VERIFY changes are minimal and precise
+   - If validation fails, expand the patch to include more context and retry
+
+Remember: A failed patch can break the entire codebase. Prefer a single, robust, comprehensive patch that is reliable and unambiguous. Do not miss any requested changes, and do not add anything extra.
 """
 
 

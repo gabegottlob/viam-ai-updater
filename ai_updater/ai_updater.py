@@ -118,7 +118,7 @@ class AIUpdater:
             if self.args.work:
                 print(f"get_relevant_context stage 1 response: {response.text}")
             elif self.args.test:
-                write_to_file(os.path.join(self.current_dir, "getrelevantcontext_stage1.txt"), str(response.text))
+                write_to_file(os.path.join(self.current_dir, "getrelevantcontext_stage1.txt"), str(response.text), quiet=True)
 
         file_analysis = []
         for file_path in response.parsed.file_paths:
@@ -147,7 +147,7 @@ class AIUpdater:
             if self.args.work:
                 print(f"get_relevant_context stage 2 response: {analysis_str}")
             elif self.args.test:
-                write_to_file(os.path.join(self.current_dir, "getrelevantcontext_stage2.txt"), analysis_str)
+                write_to_file(os.path.join(self.current_dir, "getrelevantcontext_stage2.txt"), analysis_str, quiet=True)
         print(f"Finished get_relevant_context stage 2. Gemini model used: {file_analysis[0].model_version}")
         return [response.parsed for response in file_analysis]
 
@@ -188,7 +188,7 @@ class AIUpdater:
             if self.args.work:
                 print(f"get_diff_analysis response: {response.text}")
             elif self.args.test:
-                write_to_file(os.path.join(self.current_dir, "getdiffanalysis.txt"), response.text)
+                write_to_file(os.path.join(self.current_dir, "getdiffanalysis.txt"), response.text, quiet=True)
         print(f"Finished get_diff_analysis. Gemini model used: {response.model_version}")
         return response
 
@@ -243,7 +243,7 @@ class AIUpdater:
         else:
             try:
                 if self.args.debug:
-                    write_to_file(os.path.join(self.current_dir, "applypatch.txt"), response.text)
+                    write_to_file(os.path.join(self.current_dir, "applypatch.txt"), response.text, quiet=True)
                 patched_content = read_file_content(os.path.join(self.sdk_root_dir, file_path))
                 for r, w in zip(response.parsed.replace_text, response.parsed.with_text, strict=True):
                     if patched_content.count(r) == 0:
@@ -320,7 +320,7 @@ class AIUpdater:
             if self.args.work:
                 print(f"Git diff output: {git_diff_output}")
             elif self.args.test:
-                write_to_file(os.path.join(self.current_dir, "gitdifftest.txt"), git_diff_output)
+                write_to_file(os.path.join(self.current_dir, "gitdifftest.txt"), git_diff_output, quiet=True)
 
         relevant_context = await self.get_relevant_context(git_diff_output)
 

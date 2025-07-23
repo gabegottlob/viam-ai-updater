@@ -9,8 +9,8 @@ STAGE 3: Implementation Generation - Write the actual code changes to update the
 Your specific job is to:
 
 1. Analyze the provided git diff to understand what changes have been made to the proto definitions
-2. Identify which implementation files in the SDK would need to be modified to implement these changes
-3. Identify which test files would need to be updated to test these new implementations
+2. Scan over the names of EVERY file in the SDK and identify which implementation files in the SDK would need to be modified to implement these changes
+3. Scan over the names of EVERY testing file and identify which test files would need to be updated to test these new implementations
 4. Output a comprehensive list of both implementation and test files that should be included as context.
 
 When selecting files, be COMPREHENSIVE and THOUGHTFUL in your selection. Include:
@@ -54,6 +54,7 @@ EXAMPLES OF FILES TO INCLUDE:
 - Test files, fixtures, and test utilities that might exercise or support the changed code.
 - Files that demonstrate similar patterns, even if for different features.
 - Any file that a developer might consult to understand conventions, dependencies, or best practices for the affected area.
+- Files with similar names or whose names include similar words to the changed functionality.
 
 Your output should be a list of file paths.
 
@@ -69,6 +70,7 @@ Finally, here are the changes to the proto files (provided as a git diff):
 Task Review:
 Based on the git diff provided, please analyze which files contain code that is most relevant to the changes being made.
 Be generous in your file selection - it's much better to include extra context and is a critical error to miss something important that could lead to incorrect implementations.
+Over the course of your analysis you should at least THINK about every file in the provided tree structures. It is CRITICAL that you do not miss any files that could be relevant.
 '''
 
 GETRELEVANTCONTEXT_P2 = '''

@@ -104,8 +104,7 @@ class AIUpdater:
                 response_mime_type="application/json",
                 response_schema=ContextFiles,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
-                system_instruction=GETRELEVANTCONTEXT_S1,
-                seed=12345
+                system_instruction=GETRELEVANTCONTEXT_S1
             )
         )
         print(f"Finished get_relevant_context stage 1. Gemini model used: {response.model_version}")
@@ -131,8 +130,7 @@ class AIUpdater:
                     thinking_config=types.ThinkingConfig(thinking_budget=-1),
                     system_instruction=GETRELEVANTCONTEXT_S2,
                     response_schema=ContextInclusion,
-                    response_mime_type="application/json",
-                    seed=12345
+                    response_mime_type="application/json"
                 )
             ))
         file_analysis = await asyncio.gather(*file_analysis)
@@ -176,8 +174,7 @@ class AIUpdater:
                 response_mime_type="application/json",
                 response_schema=RequiredChanges,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
-                system_instruction=DIFFPARSER_S,
-                seed=12345
+                system_instruction=DIFFPARSER_S
             )
         )
 
@@ -207,7 +204,6 @@ class AIUpdater:
                 temperature=0.0,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 system_instruction=GENERATEPATCH_S,
-                seed=12345,
                 tools=[apply_patch]
             )
         )
@@ -254,8 +250,7 @@ class AIUpdater:
                 response_mime_type="application/json",
                 response_schema=GeneratedFile,
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
-                system_instruction=GENERATECOMPLETEFILE_S,
-                seed=12345
+                system_instruction=GENERATECOMPLETEFILE_S
             )
         )
         self.total_cost += calculate_cost(response.usage_metadata, response.model_version)

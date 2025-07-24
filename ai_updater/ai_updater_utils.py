@@ -57,8 +57,8 @@ def calculate_cost(usage_metadata, model: str) -> float:
         print(f"WARNING: {model} is not a supported model for cost calculation")
         return 0.0
 
-    input_tokens = usage_metadata.prompt_token_count
-    output_tokens = usage_metadata.candidates_token_count
+    input_tokens = usage_metadata.prompt_token_count if usage_metadata.prompt_token_count is not None else 0
+    output_tokens = usage_metadata.candidates_token_count if usage_metadata.candidates_token_count is not None else 0
 
     cost = (input_tokens / 1_000_000) * INPUT_COST_PER_MILLION_TOKENS + (output_tokens / 1_000_000) * OUTPUT_COST_PER_MILLION_TOKENS
     return cost

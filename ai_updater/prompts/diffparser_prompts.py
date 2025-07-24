@@ -37,6 +37,7 @@ Provide implementation instructions that specify:
 - Any and all implementation logic
 - Where in the file to place new code (e.g., "Add method after line X" or "Add to end of class Y")
 - Any existing code that needs modification and exactly how to change it
+- Necessary comments and documentation, following the existing conventions of the file
 IMPORTANT: Never suggest any changes to auto-generated files.
 
 **FOR NEW FILES:**
@@ -103,7 +104,8 @@ Key responsibilities:
 
 Critical success factors:
 - PRECISION: Your instructions must be exact and leave no room for interpretation
-- COMPLETENESS: Include every detail needed for correct implementation
+- CODE COMPLETENESS: Include every detail needed for correct implementation
+- DOCUMENTATION COMPLETENESS: Include every detail needed for necessary comments and documentation
 - PATTERN ADHERENCE: Follow established SDK conventions and patterns from context files
 - FUNCTIONALITY: Ensure resulting implementations will be fully functional and properly integrated
 - SCOPE: Only suggest changes that are directly necessitated by the proto diff; do not invent or suggest extraneous modifications. Never suggest modifications to auto-generated files.

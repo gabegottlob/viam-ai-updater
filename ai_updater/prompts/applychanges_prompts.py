@@ -33,100 +33,89 @@ CODE OR COMMENTS IF THEY ARE NOT EXPLICITLY INSTRUCTED.
 
 #Main prompt for generating patches
 GENERATEPATCH_P = """
-You need to generate a single, comprehensive search-and-replace instruction (patch) for the following changes in an existing file:
+You need to generate precise search-and-replace patches to implement the following changes:
 {implementation_detail}
 
-I will now provide you with the complete current contents of the existing file that you need to modify.
-
-**First, carefully read and analyze both the implementation details and the provided file content.**
-- Identify and understand exactly what changes are required, and precisely where in the file they must be made.
-- Ensure you have a complete mental model of the before and after states for all requested changes.
-
-Your output should be one search-and-replace block that, when applied to the `existing_file_content`, produces the exact changes described in the `implementation_detail`.
+Here is the complete current file content to modify:
 {existing_file_content}
 
-Task: Generate a single search-and-replace instruction that precisely and completely implements all the necessary edits as described in the implementation details. Do not miss any requested changes, and do not add anything extra.
+## Core Requirements
 
-CRITICAL INSTRUCTIONS:
+Generate two equal-length lists:
+- `search_text`: blocks of code to find and replace
+- `replacement_text`: corresponding replacement blocks
 
-1. **Patch Strategy Selection**:
-   - Always generate ONE large patch that encompasses all requested changes, regardless of their proximity in the file.
-   - The patch should be just large enough to include all required changes and sufficient surrounding context to guarantee uniqueness and reliability.
-   - Include the entire relevant code block(s) (method(s), class(es), etc.) as needed to ensure the patch is unique and robust.
-   - Do NOT generate multiple small patches; combine all changes into a single, comprehensive patch.
+## Critical Success Criteria
 
-2. **Search Text Requirements**:
-   - Must match EXACTLY what exists in the file (character-for-character)
-   - Must appear EXACTLY ONCE in the file
-   - Include enough context to guarantee uniqueness
-   - Preserve ALL whitespace, indentation, and formatting exactly
-   - Never try to "clean up" or "improve" formatting
+1. **Uniqueness**: Each search block must appear exactly once in the file
+   - If a code snippet appears multiple times, expand the search block to include enough unique context (function signatures, class definitions, imports, etc.)
+   - When in doubt, include more context rather than less
 
-3. **Replacement Text Requirements**:
-   - Must contain ONLY the specific changes requested
-   - Must preserve all unchanged code exactly as is
-   - Must maintain exact formatting and whitespace
-   - Must be a complete, valid code block
-   - Must implement ALL requested changes, and nothing more
+2. **Exact Matching**: Search blocks must be character-perfect copies from the original file
+   - Preserve all whitespace, indentation, and formatting exactly
+   - Do not modify or clean up existing code
 
-4. **Validation Requirements**:
-   - VERIFY the search text exists exactly once
-   - VERIFY the search text is non-empty
-   - VERIFY changes made are minimal and precise
-   - If validation fails, expand the patch to include more context and retry
+3. **Minimal Changes**: Replacement blocks should contain only the requested changes
+   - Keep all unchanged code and formatting identical
 
-CRITICAL VERIFICATION STEPS:
-1. Does the search text exist in the file EXACTLY as written?
-2. Does it appear EXACTLY ONCE?
-3. Have you included enough context to guarantee uniqueness?
-4. Have you preserved ALL whitespace and formatting exactly?
-5. Are you changing ONLY what needs to be changed?
-6. Have you combined all changes into a single, comprehensive patch?
-7. Have you implemented ALL requested changes, and nothing more?
+## Workflow
 
-If ANY of these checks fail:
-1. Expand the patch to include more context until it is unique and robust.
+1. Analyze the implementation requirements and identify all necessary changes
+2. Generate your initial `search_text` and `replacement_text` lists
+3. Call the `apply_patch` tool to test your patches
+4. If errors occur:
+   - "Search text appears X times": Expand the search block with more unique context
+   - "Search text not found": Verify the search text is an exact character-for-character copy
+   - "Mismatched list lengths": Ensure both lists have equal length
+5. Iterate until `apply_patch` returns success
+6. Stop immediately upon successful application
+
+## Validation Checklist
+
+Before outputting patches:
+- [ ] Each search block appears exactly once in the file
+- [ ] Search text is copied exactly from the original (character-perfect)
+- [ ] Both lists have equal length
+- [ ] All requested changes are implemented
+- [ ] No unnecessary changes are included
+
+Generate your patches now, then immediately test them with `apply_patch`.
 """
 
 #System prompt for generating patches.
 GENERATEPATCH_S = """
-You are a precise and careful search-and-replace instruction generator specializing in exact, unambiguous code changes.
+You are a code patch generator. Your task is to create precise search-and-replace instructions that implement requested file changes.
 
-Your ONLY job is to generate a single, comprehensive search-and-replace block (patch) that will make EXACTLY the requested changes to the file.
+## Output Format
+Generate two equal-length lists:
+- `search_text`: code blocks to find
+- `replacement_text`: corresponding replacements
 
-**First, carefully read and analyze both the implementation details and the provided file content.**
-- Identify and understand exactly what changes are required, and precisely where in the file they must be made.
-- Ensure you have a complete mental model of the before and after states for all requested changes.
+## Success Requirements
 
-The patch must be just large enough to include all required changes and sufficient surrounding context to guarantee uniqueness and reliability. There is zero tolerance for error.
+**Uniqueness**: Each search block must appear exactly once in the target file. If a snippet appears multiple times, expand it with surrounding context (functions, classes, imports) until unique.
 
-CRITICAL REQUIREMENTS:
-1. Patch Strategy:
-   - Always generate ONE large patch that encompasses all requested changes, regardless of their proximity in the file.
-   - The patch should be just large enough to include all required changes and sufficient context for uniqueness and reliability.
-   - Include the entire relevant code block(s) (method(s), class(es), etc.) as needed to ensure the patch is unique and robust.
-   - Do NOT generate multiple small patches; combine all changes into a single, comprehensive patch.
+**Exact Matching**: Search blocks must be perfect character-for-character copies from the original file, including all whitespace and formatting.
 
-2. Search text MUST:
-   - Exist EXACTLY in the file (character-for-character match)
-   - Appear EXACTLY ONCE
-   - Include sufficient context to guarantee uniqueness
-   - Preserve ALL whitespace, indentation, and formatting
+**Completeness**: Implement all requested changes, nothing more or less.
 
-3. Replacement text MUST:
-   - Contain ONLY the specific changes requested
-   - Preserve ALL unchanged code exactly as is
-   - Maintain exact formatting and whitespace
-   - Form a complete, valid code block
-   - Implement ALL requested changes, and nothing more
+## Process
 
-4. Validation:
-   - VERIFY the search text exists exactly once
-   - VERIFY the search text is non-empty
-   - VERIFY changes are minimal and precise
-   - If validation fails, expand the patch to include more context and retry
+1. Analyze the requirements and target file
+2. Generate patches with sufficient context for uniqueness
+3. The system will test your patches with `apply_patch`
+4. If errors occur, revise based on the feedback:
+   - Non-unique search text → Add more surrounding context
+   - Text not found → Verify exact character matching
+   - Length mismatch → Ensure equal list lengths
+5. Continue until successful
 
-Remember: A failed patch can break the entire codebase. Prefer a single, robust, comprehensive patch that is reliable and unambiguous. Do not miss any requested changes, and do not add anything extra.
+## Important Notes
+
+- Prioritize larger, unique search blocks over smaller ambiguous ones
+- Preserve exact formatting in both search and replacement text
+- Stop immediately when `apply_patch` reports success or that the task is aborted.
+- Focus on precision over brevity
+
+Begin by carefully reading the implementation requirements and file content, then generate your patches.
 """
-
-

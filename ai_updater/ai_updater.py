@@ -8,6 +8,7 @@ from google.genai import types
 from pydantic import BaseModel
 
 from ai_updater_utils import read_file_content, write_to_file, calculate_cost
+from ai_updater_tools import apply_patch
 
 from prompts.getrelevantcontext_prompts import GETRELEVANTCONTEXT_P1, GETRELEVANTCONTEXT_P2, GETRELEVANTCONTEXT_S1, GETRELEVANTCONTEXT_S2
 from prompts.diffparser_prompts import DIFFPARSER_P, DIFFPARSER_S
@@ -45,15 +46,6 @@ class GeneratedFile(BaseModel):
     """
     file_content: str
 
-class GeneratedPatch(BaseModel):
-    """Model for storing AI-generated patch content.
-    replace_text: List of text to replace.
-    with_text: List of text to replace with.
-    """
-    replace_text: list[str]
-    with_text: list[str]
-
-
 class AIUpdater:
     """Class for updating SDK code based on proto changes using AI."""
 
@@ -73,6 +65,9 @@ class AIUpdater:
             self.sdk_root_dir = args.work
         else:
             self.sdk_root_dir = os.path.dirname(self.current_dir)
+
+        os.environ['SDK_ROOT_DIR'] = self.sdk_root_dir
+        os.environ['CURRENT_DIR'] = self.current_dir
 
         # Initialize the Gemini client
         api_key = api_key or os.getenv("GOOGLE_API_KEY")
@@ -195,40 +190,71 @@ class AIUpdater:
         print(f"Finished get_diff_analysis. Gemini model used: {response.model_version}")
         return response
 
-    async def apply_change(self, file_path: str, implementation_detail: str, requires_creation: bool, fallback: bool = False):
-        """Applies the AI suggested changes to a single file. If the file needs to be created from scratch,
-        the file will be completely regenerated. If the file already exists, the file will be patched
-        (if the patch generation fails, the file will be completely regenerated as a fallback).
+    async def generate_patch(self, file_path: str, implementation_detail: str):
+        """Attemps to apply the AI suggested changes to a single file. If the patch generation fails,
+        the file will be completely regenerated as a fallback (via generate_file).
 
         Args:
             file_path: The path to the file that needs to be updated.
             implementation_detail: The details of the changes to be made to the file.
-            requires_creation: Whether or not the file needs to be created from scratch.
-            fallback: Whether this is a fallback call from failed patching.
         """
-        existing_file_content = f"=== {file_path} ===\n"
-        if requires_creation:
-            if fallback:
-                existing_file_content += read_file_content(os.path.join(self.sdk_root_dir, file_path))
-            else:
-                existing_file_content += f"This file does not exist in the repository. It will need to be created from scratch.\n"
-            prompt = GENERATECOMPLETEFILE_P.format(implementation_detail=implementation_detail, existing_file_content=existing_file_content)
-            system_prompt = GENERATECOMPLETEFILE_S
-            response_schema = GeneratedFile
+        existing_file_content = read_file_content(os.path.join(self.sdk_root_dir, file_path))
+        prompt = GENERATEPATCH_P.format(implementation_detail=implementation_detail, existing_file_content=f"=== {file_path} ===\n{existing_file_content}")
+        response = await self.client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+                thinking_config=types.ThinkingConfig(thinking_budget=-1),
+                system_instruction=GENERATEPATCH_S,
+                seed=12345,
+                tools=[apply_patch]
+            )
+        )
+
+        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        if len(response.automatic_function_calling_history) == 1:
+            patch_success = False
         else:
-            existing_file_content += read_file_content(os.path.join(self.sdk_root_dir, file_path))
-            prompt = GENERATEPATCH_P.format(implementation_detail=implementation_detail, existing_file_content=existing_file_content)
-            system_prompt = GENERATEPATCH_S
-            response_schema = GeneratedPatch
+            patch_success = response.automatic_function_calling_history[-1].parts[0].function_response.response['result']['success']
+
+        original_file_dir = os.path.dirname(os.path.join(self.sdk_root_dir, file_path))
+        original_filename = os.path.basename(file_path)
+        if self.args.test:
+            dir_structure = os.path.relpath(original_file_dir, self.sdk_root_dir)
+            ai_generated_dir = os.path.join(os.path.dirname(self.sdk_root_dir), "ai_generated", dir_structure)
+            os.makedirs(ai_generated_dir, exist_ok=True)
+            ai_file_path = os.path.join(ai_generated_dir, original_filename)
+        elif self.args.work:
+            ai_file_path = os.path.join(original_file_dir, original_filename)
+
+        if patch_success:
+            search_text = response.automatic_function_calling_history[-2].parts[0].function_call.args['search_text']
+            replacement_text = response.automatic_function_calling_history[-2].parts[0].function_call.args['replacement_text']
+            attempt_number = response.automatic_function_calling_history[-2].parts[0].function_call.args['attempt_number']
+            patched_content = existing_file_content
+            for search, replace in zip(search_text, replacement_text):
+                patched_content = patched_content.replace(search, replace)
+            write_to_file(ai_file_path, patched_content, quiet=True)
+            print(f"Successfully patched {file_path} in {attempt_number} attempts.\n")
+        else:
+            print(f"Failed to patch {file_path}. Falling back to complete file generation.\n")
+            await self.generate_file(file_path=file_path, implementation_detail=implementation_detail, fallback=True)
+
+    async def generate_file(self, file_path: str, implementation_detail: str, fallback: bool = False):
+        existing_file_content = f"=== {file_path} ===\n"
+        if fallback:
+            existing_file_content = f"=== {file_path} ===\n" + existing_file_content
+        prompt = GENERATECOMPLETEFILE_P.format(implementation_detail=implementation_detail, existing_file_content=existing_file_content)
         response = await self.client.aio.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
                 response_mime_type="application/json",
-                response_schema=response_schema,
+                response_schema=GeneratedFile,
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
-                system_instruction=system_prompt,
+                system_instruction=GENERATECOMPLETEFILE_S,
                 seed=12345
             )
         )
@@ -242,26 +268,8 @@ class AIUpdater:
             ai_file_path = os.path.join(ai_generated_dir, original_filename)
         elif self.args.work:
             ai_file_path = os.path.join(original_file_dir, original_filename)
-        if requires_creation:
-            write_to_file(ai_file_path, response.parsed.file_content)
-        else:
-            try:
-                if self.args.debug:
-                    write_to_file(os.path.join(self.current_dir, "applypatch.txt"), response.text, quiet=True)
-                patched_content = read_file_content(os.path.join(self.sdk_root_dir, file_path))
-                for r, w in zip(response.parsed.replace_text, response.parsed.with_text, strict=True):
-                    if patched_content.count(r) == 0:
-                        raise ValueError(f"ERROR: The search text does not exist in the file.")
-                    if patched_content.count(w) > 1:
-                        raise ValueError(f"ERROR: The replacement text appears multiple times in the file.")
-                    if r == "":
-                        raise ValueError(f"ERROR: The search text is empty.")
-                    patched_content = patched_content.replace(r, w)
-                write_to_file(ai_file_path, patched_content, quiet=True)
-                print(f"Patched {ai_file_path}\n")
-            except Exception as e:
-                print(f"Error applying patch to {file_path}: {e}\nFalling back to complete file generation.\n")
-                await self.apply_change(file_path=file_path, implementation_detail=implementation_detail, requires_creation=True, fallback=True)
+        write_to_file(ai_file_path, response.parsed.file_content, quiet=True)
+        print(f"Successfully generated {file_path}\n")
 
     async def apply_changes(self, diff_analysis: types.GenerateContentResponse):
         """Apply all code changes suggested by the AI by choosing the appropriate update strategy for each file.
@@ -291,7 +299,10 @@ class AIUpdater:
             file_path = parsed_response.files_to_update[i]
             implementation_detail = parsed_response.implementation_details[i]
             requires_creation = parsed_response.requires_creation[i]
-            required_changes.append(self.apply_change(file_path=file_path, implementation_detail=implementation_detail, requires_creation=requires_creation))
+            if requires_creation:
+                required_changes.append(self.generate_file(file_path=file_path, implementation_detail=implementation_detail))
+            else:
+                required_changes.append(self.generate_patch(file_path=file_path, implementation_detail=implementation_detail))
         await asyncio.gather(*required_changes)
         print(f"Finished applying changes. Gemini model used: gemini-2.5-flash")
 

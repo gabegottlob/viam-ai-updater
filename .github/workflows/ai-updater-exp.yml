@@ -49,7 +49,7 @@ jobs:
       - name: Install dependencies
         run: |
           source .venv/bin/activate
-          uv pip install google-genai pydantic
+          uv pip install -r viam-ai-updater/requirements.txt
 
       - name: Run ai-updater
         env:

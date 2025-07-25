@@ -41,7 +41,7 @@ def apply_patch(file_path: str, search_text: list[str], replacement_text: list[s
     file_path = os.path.join(sdk_root_dir, file_path)
 
     # Define maximum number of attempts before giving up
-    MAX_ATTEMPTS = 10
+    MAX_ATTEMPTS = 5
     max_attempts_message = f"STOP_TRYING: Maximum attempts ({MAX_ATTEMPTS}) exceeded. The AI should stop trying to apply patches to this file and respond with TASK ABORTED: PATCHING FAILED."
     max_attempts_return = {
         "success": False,

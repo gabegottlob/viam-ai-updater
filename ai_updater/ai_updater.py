@@ -40,11 +40,6 @@ class RequiredChanges(BaseModel):
     implementation_details: list[str]
     requires_creation: list[bool]
 
-class GeneratedFile(BaseModel):
-    """Model for storing AI-generated file content.
-    file_content: The entire content of the file.
-    """
-    file_content: str
 
 class AIUpdater:
     """Class for updating SDK code based on proto changes using AI."""
@@ -288,15 +283,13 @@ class AIUpdater:
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
-                response_mime_type="application/json",
-                response_schema=GeneratedFile,
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
                 system_instruction=GENERATECOMPLETEFILE_S
             )
         )
 
         self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
-        write_to_file(ai_file_path, response.parsed.file_content, quiet=True)
+        write_to_file(ai_file_path, response.text, quiet=True)
         print(f"Successfully generated {file_path}\n")
 
     def apply_changes(self, diff_analysis: types.GenerateContentResponse):

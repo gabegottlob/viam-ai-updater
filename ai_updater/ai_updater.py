@@ -277,10 +277,12 @@ class AIUpdater:
             self.generate_file(file_path=file_path, implementation_detail=implementation_detail, ai_file_path=ai_file_path, fallback=True)
 
     def generate_file(self, file_path: str, implementation_detail: str, ai_file_path: str, fallback: bool = False):
-        existing_file_content = f"=== {file_path} ===\n"
         if fallback:
-            existing_file_content = f"=== {file_path} ===\n" + existing_file_content
-        prompt = GENERATECOMPLETEFILE_P.format(implementation_detail=implementation_detail, existing_file_content=existing_file_content)
+            existing_file_content = read_file_content(os.path.join(self.sdk_root_dir, file_path))
+            prompt = GENERATECOMPLETEFILE_P.format(implementation_detail=implementation_detail, existing_file_content=f"==={file_path}===\n{existing_file_content}")
+        else:
+            message = f"=== {file_path} ===\nThis file does not exist. Please generate the entire file content from scratch."
+            prompt = GENERATECOMPLETEFILE_P.format(implementation_detail=implementation_detail, existing_file_content=message)
         response = self.client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,

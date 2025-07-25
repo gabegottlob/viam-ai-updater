@@ -48,7 +48,7 @@ jobs:
       - name: Install dependencies
         run: |
           source .venv/bin/activate
-          uv pip install google-genai pydantic
+          uv pip install -r viam-ai-updater/requirements.txt
 
       - name: Run ai-updater
         env:
@@ -69,6 +69,5 @@ jobs:
           body: This is an AI-generated PR to update the SDK based on proto changes. The AI may make mistakes so review carefully.
           assignees: gabegottlob
           reviewers: gabegottlob
-          team-reviewers: sdk-netcode
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: true

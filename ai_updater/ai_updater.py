@@ -8,7 +8,7 @@ from google.genai import types
 from pydantic import BaseModel
 
 from ai_updater_utils import read_file_content, write_to_file, calculate_cost
-from ai_updater_tools import apply_patch
+from ai_updater_tools import apply_patch, apply_patch_declaration
 
 from prompts.getrelevantcontext_prompts import GETRELEVANTCONTEXT_P1, GETRELEVANTCONTEXT_P2, GETRELEVANTCONTEXT_S1, GETRELEVANTCONTEXT_S2
 from prompts.diffparser_prompts import DIFFPARSER_P, DIFFPARSER_S
@@ -187,62 +187,101 @@ class AIUpdater:
         print(f"Finished get_diff_analysis. Gemini model used: {response.model_version}")
         return response
 
-    async def generate_patch(self, file_path: str, implementation_detail: str):
+    def generate_patch(self, file_path: str, implementation_detail: str, ai_file_path: str):
         """Attemps to apply the AI suggested changes to a single file. If the patch generation fails,
         the file will be completely regenerated as a fallback (via generate_file).
 
         Args:
             file_path: The path to the file that needs to be updated.
             implementation_detail: The details of the changes to be made to the file.
+            ai_file_path: The path where the AI-generated file content will be saved.
         """
         existing_file_content = read_file_content(os.path.join(self.sdk_root_dir, file_path))
-        prompt = GENERATEPATCH_P.format(implementation_detail=implementation_detail, existing_file_content=f"=== {file_path} ===\n{existing_file_content}")
-        response = await self.client.aio.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.0,
-                thinking_config=types.ThinkingConfig(thinking_budget=-1),
-                system_instruction=GENERATEPATCH_S,
-                tools=[apply_patch]
+        initial_prompt_text = GENERATEPATCH_P.format(implementation_detail=implementation_detail, existing_file_content=f"=== {file_path} ===\n{existing_file_content}")
+        system_prompt = GENERATEPATCH_S
+
+        # Initialize conversation history
+        contents = [types.Content(role="user", parts=[types.Part(text=initial_prompt_text)])]
+        patch_success = False
+        stop_trying = False
+        attempt_count = 0
+        # Variables to store search/replacement texts for final application
+        final_search_text = []
+        final_replacement_text = []
+
+        # Tool-calling feedback loop for applying patches
+        while not patch_success and not stop_trying:
+            attempt_count += 1
+            response = self.client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=0.0,
+                    thinking_config=types.ThinkingConfig(thinking_budget=-1),
+                    system_instruction=system_prompt,
+                    tools=[types.Tool(function_declarations=[apply_patch_declaration])],
+                    tool_config = types.ToolConfig(
+                        function_calling_config=types.FunctionCallingConfig(
+                            mode="ANY", allowed_function_names=["apply_patch"]
+                        )
+                    )
+                )
             )
-        )
+            self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
 
-        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
-        if len(response.automatic_function_calling_history) == 1:
-            patch_success = False
-        else:
-            patch_success = response.automatic_function_calling_history[-1].parts[0].function_response.response['result']['success']
+            # Append model's response to history
+            if response.candidates and response.candidates[0].content:
+                contents.append(response.candidates[0].content)
 
-        original_file_dir = os.path.dirname(os.path.join(self.sdk_root_dir, file_path))
-        original_filename = os.path.basename(file_path)
-        if self.args.test:
-            dir_structure = os.path.relpath(original_file_dir, self.sdk_root_dir)
-            ai_generated_dir = os.path.join(os.path.dirname(self.sdk_root_dir), "ai_generated", dir_structure)
-            os.makedirs(ai_generated_dir, exist_ok=True)
-            ai_file_path = os.path.join(ai_generated_dir, original_filename)
-        elif self.args.work:
-            ai_file_path = os.path.join(original_file_dir, original_filename)
+                if response.candidates[0].content.parts and response.candidates[0].content.parts[0].function_call:
+                    function_call = response.candidates[0].content.parts[0].function_call
+                    if function_call.name == "apply_patch":
+                        tool_result = apply_patch(file_path=file_path,
+                                                    search_text=function_call.args['search_text'],
+                                                    replacement_text=function_call.args['replacement_text'],
+                                                    attempt_number=attempt_count, quiet=not self.args.debug)
+                        patch_success = tool_result['success']
+                        stop_trying = tool_result.get('stop_trying', False)
+
+                        if patch_success:
+                            final_search_text = function_call.args['search_text']
+                            final_replacement_text = function_call.args['replacement_text']
+
+                        # Append function response to history
+                        function_response_part = types.Part.from_function_response(
+                            name=function_call.name,
+                            response={"result": tool_result},
+                        )
+                        contents.append(types.Content(role="user", parts=[function_response_part]))
+                    else:
+                        print(f"Unexpected function call: {function_call.name}. Aborting patch attempts.")
+                        patch_success = False
+                        stop_trying = True
+                else:
+                    print("No function call was made by the AI. Aborting patch attempts.")
+                    patch_success = False
+                    stop_trying = True
+            else:
+                print("No response candidates or content found from AI. Aborting patch attempts.")
+                patch_success = False
+                stop_trying = True
 
         if patch_success:
-            search_text = response.automatic_function_calling_history[-2].parts[0].function_call.args['search_text']
-            replacement_text = response.automatic_function_calling_history[-2].parts[0].function_call.args['replacement_text']
-            attempt_number = response.automatic_function_calling_history[-2].parts[0].function_call.args['attempt_number']
             patched_content = existing_file_content
-            for search, replace in zip(search_text, replacement_text):
+            for search, replace in zip(final_search_text, final_replacement_text):
                 patched_content = patched_content.replace(search, replace)
             write_to_file(ai_file_path, patched_content, quiet=True)
-            print(f"Successfully patched {file_path} in {attempt_number} attempts.\n")
+            print(f"Successfully patched {file_path} in {attempt_count} attempts.\n")
         else:
             print(f"Failed to patch {file_path}. Falling back to complete file generation.\n")
-            await self.generate_file(file_path=file_path, implementation_detail=implementation_detail, fallback=True)
+            self.generate_file(file_path=file_path, implementation_detail=implementation_detail, ai_file_path=ai_file_path, fallback=True)
 
-    async def generate_file(self, file_path: str, implementation_detail: str, fallback: bool = False):
+    def generate_file(self, file_path: str, implementation_detail: str, ai_file_path: str, fallback: bool = False):
         existing_file_content = f"=== {file_path} ===\n"
         if fallback:
             existing_file_content = f"=== {file_path} ===\n" + existing_file_content
         prompt = GENERATECOMPLETEFILE_P.format(implementation_detail=implementation_detail, existing_file_content=existing_file_content)
-        response = await self.client.aio.models.generate_content(
+        response = self.client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -253,20 +292,12 @@ class AIUpdater:
                 system_instruction=GENERATECOMPLETEFILE_S
             )
         )
+
         self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
-        original_file_dir = os.path.dirname(os.path.join(self.sdk_root_dir, file_path))
-        original_filename = os.path.basename(file_path)
-        if self.args.test:
-            dir_structure = os.path.relpath(original_file_dir, self.sdk_root_dir)
-            ai_generated_dir = os.path.join(os.path.dirname(self.sdk_root_dir), "ai_generated", dir_structure)
-            os.makedirs(ai_generated_dir, exist_ok=True)
-            ai_file_path = os.path.join(ai_generated_dir, original_filename)
-        elif self.args.work:
-            ai_file_path = os.path.join(original_file_dir, original_filename)
         write_to_file(ai_file_path, response.parsed.file_content, quiet=True)
         print(f"Successfully generated {file_path}\n")
 
-    async def apply_changes(self, diff_analysis: types.GenerateContentResponse):
+    def apply_changes(self, diff_analysis: types.GenerateContentResponse):
         """Apply all code changes suggested by the AI by choosing the appropriate update strategy for each file.
 
         This is the main orchestrator method that determines the best approach for each file:
@@ -289,16 +320,24 @@ class AIUpdater:
             print("THE AI WORKFLOW DID NOT DETERMINE THAT ANY FILES NEED TO BE UPDATED BASED ON THE GIVEN PROTO UPDATE DIFF")
             return
 
-        required_changes = []
         for i in range(len(parsed_response.files_to_update)):
             file_path = parsed_response.files_to_update[i]
             implementation_detail = parsed_response.implementation_details[i]
             requires_creation = parsed_response.requires_creation[i]
+
+            original_file_dir = os.path.dirname(os.path.join(self.sdk_root_dir, file_path))
+            original_filename = os.path.basename(file_path)
+            if self.args.test:
+                dir_structure = os.path.relpath(original_file_dir, self.sdk_root_dir)
+                ai_generated_dir = os.path.join(os.path.dirname(self.sdk_root_dir), "ai_generated", dir_structure)
+                os.makedirs(ai_generated_dir, exist_ok=True)
+                ai_file_path = os.path.join(ai_generated_dir, original_filename)
+            elif self.args.work:
+                ai_file_path = os.path.join(original_file_dir, original_filename)
             if requires_creation:
-                required_changes.append(self.generate_file(file_path=file_path, implementation_detail=implementation_detail))
+                self.generate_file(file_path=file_path, implementation_detail=implementation_detail, ai_file_path=ai_file_path)
             else:
-                required_changes.append(self.generate_patch(file_path=file_path, implementation_detail=implementation_detail))
-        await asyncio.gather(*required_changes)
+                self.generate_patch(file_path=file_path, implementation_detail=implementation_detail, ai_file_path=ai_file_path)
         print(f"Finished applying changes. Gemini model used: gemini-2.5-flash")
 
     async def run(self):
@@ -337,7 +376,7 @@ class AIUpdater:
         diff_analysis = self.get_diff_analysis(git_diff_output, relevant_context)
 
         if not self.args.noai:
-            await self.apply_changes(diff_analysis)
+            self.apply_changes(diff_analysis)
 
         print(f"\nTotal estimated cost for this run: ${self.total_cost:.4f}")
 

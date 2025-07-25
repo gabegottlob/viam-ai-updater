@@ -58,6 +58,11 @@ Generate two equal-length lists:
 3. **Minimal Changes**: Replacement blocks should contain only the requested changes
    - Keep all unchanged code and formatting identical
 
+4.  **Strict Adherence to Implementation Details**: Your primary guide for making changes is the `implementation_details`. Implement *only* what is explicitly requested there.
+
+5.  **Preserve Original Code**: DO NOT modify any of that existing code unless it is directly specified in the `implementation_details`. The existing code provided to you must be reproduced exactly, including all comments, blank lines, and existing formatting.
+
+
 ## Workflow
 
 1. Analyze the implementation requirements and identify all necessary changes

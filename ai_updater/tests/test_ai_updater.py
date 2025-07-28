@@ -14,7 +14,7 @@ Proto update hashes to use as test cases:
 '''
 NOTE: The AI updater is inherently nondeterministic and hard to quantitatively test with a testing suite.
 While the following tests have basic assertions to ensure the AI generated certain files, they do not ensure that the AI generated the correct code.
-The reccomended method of testing is to run these tests and manually inspect the AI generated results compared to the expected human implementation.
+The recommended method of testing is to run these tests and manually inspect the AI generated results compared to the expected human implementation.
 
 To run the tests via pytest, run the following command:
 pytest test_ai_updater.py
@@ -61,7 +61,7 @@ SCENARIOS = [
     {
         "name": "scenario-5",
         "description": "Single field update that leads to many small changes in long file",
-        "pre_implementation_commit": "60b58ca3a0589da2d11cc9c04924c6567a0ce9fc",
+        "pre_implementation_commit": "7e92b134e5440f5aed861d1117ec31de118a70c9",
         "specific_proto_diff_file": True,
         "repo_url": "git@github.com:viamrobotics/viam-python-sdk.git"
     }
@@ -111,6 +111,6 @@ def _run_test_scenario(scenario, skip_comparison=True):
 
 if __name__ == "__main__":
     print("Running all scenarios for debugging...")
-    for scenario in SCENARIOS[4:5]: #change this to run specific scenarios if desired
+    for scenario in SCENARIOS[:]: #change this to run specific scenarios if desired
         print(f"Running scenario: {scenario['name']}")
         _run_test_scenario(scenario) # skip_comparison defaults to True for standalone run

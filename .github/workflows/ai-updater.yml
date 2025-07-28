@@ -8,8 +8,14 @@ on:
         description: "The branch to base the update on"
         required: true
         type: string
+      sdk:
+        description: "The SDK that is being updated (currently supports python, cpp, typescript, flutter)"
+        required: true
+        type: string
     secrets:
       GOOGLE_API_KEY:
+        required: true
+      GIT_ACCESS_TOKEN:
         required: true
 
 jobs:
@@ -33,6 +39,10 @@ jobs:
 
       - name: Install tree command
         run: brew install tree
+
+      - name: Install dependencies for typescript (if necessary)
+        if: inputs.sdk == 'typescript'
+        run: brew install node npm protobuf protoc-gen-grpc-web
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -64,10 +74,11 @@ jobs:
           commit-message: '[WORKFLOW] AI update based on proto changes'
           path: sdk
           branch: workflow/ai-updater
+          delete-branch: true
           base: main
           title: AI update based on proto changes
           body: This is an AI-generated PR to update the SDK based on proto changes. The AI may make mistakes so review carefully.
           assignees: gabegottlob
           reviewers: gabegottlob
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GIT_ACCESS_TOKEN }}
           draft: true

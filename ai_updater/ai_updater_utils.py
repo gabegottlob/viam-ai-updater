@@ -53,6 +53,9 @@ def calculate_cost(usage_metadata, model: str) -> float:
             OUTPUT_COST_PER_MILLION_TOKENS = 15.00
         else:
             OUTPUT_COST_PER_MILLION_TOKENS = 10.00
+    elif model == "gemini-2.5-flash-lite":
+        INPUT_COST_PER_MILLION_TOKENS = 0.10
+        OUTPUT_COST_PER_MILLION_TOKENS = 0.40
     else:
         print(f"WARNING: {model} is not a supported model for cost calculation")
         return 0.0

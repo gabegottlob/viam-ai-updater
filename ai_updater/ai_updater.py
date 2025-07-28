@@ -100,7 +100,6 @@ class AIUpdater:
                 response_schema=ContextFiles,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 system_instruction=GETRELEVANTCONTEXT_S1,
-                seed=12345
             )
         )
         print(f"Finished get_relevant_context stage 1. Gemini model used: {response.model_version}")
@@ -127,7 +126,6 @@ class AIUpdater:
                     system_instruction=GETRELEVANTCONTEXT_S2,
                     response_schema=ContextInclusion,
                     response_mime_type="application/json",
-                    seed=12345
                 )
             ))
         file_analysis = await asyncio.gather(*file_analysis)
@@ -172,7 +170,6 @@ class AIUpdater:
                 response_schema=RequiredChanges,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 system_instruction=DIFFPARSER_S,
-                seed=12345
             )
         )
 
@@ -223,7 +220,6 @@ class AIUpdater:
                             mode="ANY", allowed_function_names=["apply_patch"]
                         )
                     ),
-                    seed=12345
                 )
             )
             self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
@@ -283,18 +279,20 @@ class AIUpdater:
             message = f"=== {file_path} ===\nThis file does not exist. Please generate the entire file content from scratch."
             prompt = GENERATECOMPLETEFILE_P.format(implementation_detail=implementation_detail, existing_file_content=message)
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.0,
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
                 system_instruction=GENERATECOMPLETEFILE_S,
-                seed=12345
             )
         )
 
         self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
-        write_to_file(ai_file_path, response.text, quiet=True)
+        cleaned_response = response.text.strip()
+        if cleaned_response.startswith("```") and cleaned_response.endswith("```"): #remove markdown code block formatting if present
+            cleaned_response = "\n".join(cleaned_response.splitlines()[1:-1]) + "\n"
+        write_to_file(ai_file_path, cleaned_response, quiet=True)
         print(f"Successfully generated {file_path}\n")
 
     def apply_changes(self, diff_analysis: types.GenerateContentResponse):

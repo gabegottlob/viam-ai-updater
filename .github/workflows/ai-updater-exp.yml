@@ -1,0 +1,74 @@
+name: Update SDK based on proto changes + open PR
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      target_branch:
+        description: "The branch to base the update on"
+        required: true
+        type: string
+    secrets:
+      GOOGLE_API_KEY:
+        required: true
+
+jobs:
+  run-ai-updater:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout SDK
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: sdk
+
+      - name: Checkout ai_updater
+        uses: actions/checkout@v4
+        with:
+          repository: gabegottlob/viam-ai-updater
+          ref: experiment
+          path: viam-ai-updater
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install tree command
+        run: brew install tree
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        run: uv python install
+
+      - name: Create virtual environment (for testing)
+        run: uv venv
+
+      - name: Install dependencies
+        run: |
+          source .venv/bin/activate
+          uv pip install -r viam-ai-updater/requirements.txt
+
+      - name: Run ai-updater
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          cd viam-ai-updater/ai_updater
+          uv run python ai_updater.py --debug --work $GITHUB_WORKSPACE/sdk
+
+      - name: Add + Commit + Open PR
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: '[WORKFLOW] AI update based on proto changes'
+          path: sdk
+          branch: workflow/ai-updater
+          base: main
+          title: AI update based on proto changes
+          body: This is an AI-generated PR to update the SDK based on proto changes. The AI may make mistakes so review carefully.
+          assignees: gabegottlob
+          reviewers: gabegottlob
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: true

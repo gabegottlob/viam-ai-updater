@@ -15,8 +15,8 @@ on:
     secrets:
       GOOGLE_API_KEY:
         required: true
-      # GIT_ACCESS_TOKEN:
-      #   required: true
+      GIT_ACCESS_TOKEN:
+        required: true
 
 jobs:
   run-ai-updater:
@@ -89,6 +89,5 @@ jobs:
             ${{ steps.ai-updater.outputs.ai_summary }}
           assignees: gabegottlob
           reviewers: gabegottlob
-          #token: ${{ secrets.GIT_ACCESS_TOKEN }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GIT_ACCESS_TOKEN }}
           draft: true

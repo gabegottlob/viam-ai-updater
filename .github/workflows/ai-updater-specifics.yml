@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: gabegottlob/viam-ai-updater
-          ref: experiment
+          ref: sdk-specifics
           path: viam-ai-updater
           token: ${{ secrets.GITHUB_TOKEN }}
 

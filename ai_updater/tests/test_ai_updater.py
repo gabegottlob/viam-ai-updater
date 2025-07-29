@@ -35,6 +35,7 @@ SCENARIOS = [
         "description": "Added new method to component",
         "pre_implementation_commit": "8d6b63a0fade65b8054cafb849d844bcdb089761",
         "specific_proto_diff_file": True,
+        "sdk": "python",
         "repo_url": "git@github.com:viamrobotics/viam-python-sdk.git"
     },
     {
@@ -42,6 +43,7 @@ SCENARIOS = [
         "description": "Added new field to app client",
         "pre_implementation_commit": "ef8ae496df44a8e881836e76e7e953ed5e6bbd4c",
         "specific_proto_diff_file": False,
+        "sdk": "python",
         "repo_url": "git@github.com:viamrobotics/viam-python-sdk.git"
     },
     {
@@ -49,6 +51,7 @@ SCENARIOS = [
         "description": "Added entire new components (Button and Switch)",
         "pre_implementation_commit": "e8818bce81be520a740bf3da725c8d816fe2aa4b",
         "specific_proto_diff_file": False,
+        "sdk": "python",
         "repo_url": "git@github.com:viamrobotics/viam-python-sdk.git"
     },
     {
@@ -56,6 +59,7 @@ SCENARIOS = [
         "description": "Updated a version number (no changes needed)",
         "pre_implementation_commit": "cd8765e9b2d6adcdeb7ecda6c2b72940d4439d0a",
         "specific_proto_diff_file": True,
+        "sdk": "python",
         "repo_url": "git@github.com:viamrobotics/viam-python-sdk.git"
     },
     {
@@ -63,7 +67,32 @@ SCENARIOS = [
         "description": "Single field update that leads to many small changes in long file",
         "pre_implementation_commit": "7e92b134e5440f5aed861d1117ec31de118a70c9",
         "specific_proto_diff_file": True,
+        "sdk": "python",
         "repo_url": "git@github.com:viamrobotics/viam-python-sdk.git"
+    },
+    {
+        "name": "scenario-6",
+        "description": "Typescript Gripper get_kinematics",
+        "pre_implementation_commit": "c3bb320c32384f09da161dff2fc188127c5661f2",
+        "specific_proto_diff_file": False,
+        "sdk": "typescript",
+        "repo_url": "git@github.com:viamrobotics/viam-typescript-sdk.git"
+    },
+    {
+        "name": "scenario-7",
+        "description": "C++ Gripper get_kinematics",
+        "pre_implementation_commit": "e834a64f4341f10c37a974c86c8ef37a9f334a60",
+        "specific_proto_diff_file": False,
+        "sdk": "cpp",
+        "repo_url": "git@github.com:viamrobotics/viam-cpp-sdk.git"
+    },
+    {
+        "name": "scenario-8",
+        "description": "Flutter Gripper get_kinematics",
+        "pre_implementation_commit": "834b5d2c49eae812cf91e94fc39f72ed46597f5f",
+        "specific_proto_diff_file": True,
+        "sdk": "flutter",
+        "repo_url": "git@github.com:viamrobotics/viam-flutter-sdk.git"
     }
 ]
 
@@ -90,7 +119,8 @@ def _run_test_scenario(scenario, skip_comparison=True):
 
         # Runs AI updater with test flag
         python_path = sys.executable
-        subprocess.run([python_path, "../ai_updater.py", "--debug", "--test", temp_dir],
+        sdk = scenario['sdk']
+        subprocess.run([python_path, "../ai_updater.py", "--debug", "--sdk", sdk, "--test", temp_dir],
                        check=True,
                        env=os.environ.copy(),
                        cwd=tests_dir)
@@ -111,6 +141,6 @@ def _run_test_scenario(scenario, skip_comparison=True):
 
 if __name__ == "__main__":
     print("Running all scenarios for debugging...")
-    for scenario in SCENARIOS[:]: #change this to run specific scenarios if desired
+    for scenario in SCENARIOS[5:]: #change this to run specific scenarios if desired
         print(f"Running scenario: {scenario['name']}")
         _run_test_scenario(scenario) # skip_comparison defaults to True for standalone run

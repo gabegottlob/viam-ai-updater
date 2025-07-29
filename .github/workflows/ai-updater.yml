@@ -61,23 +61,32 @@ jobs:
           uv pip install -r viam-ai-updater/requirements.txt
 
       - name: Run ai-updater
+        id: ai-updater
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
           cd viam-ai-updater/ai_updater
           uv run python ai_updater.py --debug --work $GITHUB_WORKSPACE/sdk
+          AI_SUMMARY=$(cat pr_summary.txt)
+          echo "ai_summary<<EOT" >> $GITHUB_OUTPUT
+          echo "$AI_SUMMARY" >> $GITHUB_OUTPUT
+          echo "EOT" >> $GITHUB_OUTPUT
 
       - name: Add + Commit + Open PR
         id: cpr
         uses: peter-evans/create-pull-request@v7
         with:
-          commit-message: '[WORKFLOW] AI update based on proto changes'
+          commit-message: '[WORKFLOW] AI update based on proto changes from commit ${{ github.event.head_commit.id }}'
           path: sdk
           branch: workflow/ai-updater
           delete-branch: true
           base: main
           title: AI update based on proto changes
-          body: This is an AI-generated PR to update the SDK based on proto changes. The AI may make mistakes so review carefully.
+          body: |
+            This is an AI-generated PR to update the SDK based on proto changes. The AI may make mistakes so review carefully.
+
+            **Summary of Changes:**
+            ${{ steps.ai-updater.outputs.ai_summary }}
           assignees: gabegottlob
           reviewers: gabegottlob
           token: ${{ secrets.GIT_ACCESS_TOKEN }}

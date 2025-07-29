@@ -12,7 +12,7 @@ from ai_updater_tools import apply_patch, apply_patch_declaration
 
 from prompts.getrelevantcontext_prompts import GETRELEVANTCONTEXT_P1, GETRELEVANTCONTEXT_P2, GETRELEVANTCONTEXT_S1, GETRELEVANTCONTEXT_S2
 from prompts.diffparser_prompts import DIFFPARSER_P, DIFFPARSER_S
-from prompts.applychanges_prompts import GENERATECOMPLETEFILE_P, GENERATECOMPLETEFILE_S, GENERATEPATCH_P, GENERATEPATCH_S
+from prompts.applychanges_prompts import GENERATECOMPLETEFILE_P, GENERATECOMPLETEFILE_S, GENERATEPATCH_P, GENERATEPATCH_S, GENERATESUMMARY_P
 
 class ContextFiles(BaseModel):
     """Model for storing the files that should be analyzed as potential context.
@@ -178,6 +178,26 @@ class AIUpdater:
                 write_to_file(os.path.join(self.current_dir, "getdiffanalysis.txt"), response.text, quiet=True)
         print(f"Finished get_diff_analysis. Gemini model used: {response.model_version}")
         return response
+
+    def generate_pr_summary(self, git_diff_output: str, diff_analysis: types.GenerateContentResponse):
+        """Generate a human-readable summary of the AI's updates to include in the PR.
+
+        Args:
+            git_diff_output (str): The original git diff output.
+            diff_analysis (types.GenerateContentResponse): The AI's analysis of required changes.
+        """
+        prompt = GENERATESUMMARY_P.format(git_diff_output=git_diff_output, diff_analysis_text=diff_analysis.text)
+        response = self.client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+                thinking_config=types.ThinkingConfig(thinking_budget=-1)
+            )
+        )
+        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        write_to_file(os.path.join(self.current_dir, "pr_summary.txt"), response.text, quiet=True)
+        print(f"Finished generating PR summary. Gemini model used: {response.model_version}")
 
     def generate_patch(self, file_path: str, implementation_detail: str, ai_file_path: str):
         """Attemps to apply the AI suggested changes to a single file. If the patch generation fails,
@@ -354,8 +374,9 @@ class AIUpdater:
             tests_tree_output = subprocess.check_output(["tree", "tests"], text=True, cwd=self.sdk_root_dir)
         elif sdk == "cpp":
             git_diff_dir = os.path.join("src", "viam", "api")
-            diff_exclude_files = ":!*.cc :!src/viam/api/api_proto_tag.lock :!src/viam/api/buf.lock :!src/viam/api/buf.yaml :!src/viam/api/CMakeLists.txt :!src/viam/api/viamcppsdk_replace_switch.cmake"
-            git_diff_output = subprocess.check_output(["git", "diff", "HEAD~1", "HEAD", "--", git_diff_dir, diff_exclude_files], text=True, cwd=self.sdk_root_dir)
+            diff_exclude_files = [":!*.cc", ":!src/viam/api/api_proto_tag.lock", ":!src/viam/api/buf.lock", ":!src/viam/api/buf.yaml", ":!src/viam/api/CMakeLists.txt", ":!src/viam/api/viamcppsdk_replace_switch.cmake"]
+            git_diff_command = ["git", "diff", "HEAD~1", "HEAD", "--", git_diff_dir] + diff_exclude_files
+            git_diff_output = subprocess.check_output(git_diff_command, text=True, cwd=self.sdk_root_dir)
             sdk_tree_output = subprocess.check_output(["tree", os.path.join("src", "viam", "sdk")], text=True, cwd=self.sdk_root_dir)
             tests_tree_output = "\nFor the C++ SDK, the tests are included in the sdk/tests directory so the tree will not be resupplied here."
         elif sdk == "flutter":
@@ -364,12 +385,17 @@ class AIUpdater:
             sdk_tree_output = subprocess.check_output(["tree", os.path.join("lib", "src"), "-I", "gen"], text=True, cwd=self.sdk_root_dir)
             tests_tree_output = subprocess.check_output(["tree", "test"], text=True, cwd=self.sdk_root_dir)
         elif sdk == "typescript":
+            current_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, cwd=self.sdk_root_dir).strip()
             subprocess.check_output(["git", "checkout", "HEAD~1"], cwd=self.sdk_root_dir)
             subprocess.check_output(["make", "build-buf"], cwd=self.sdk_root_dir)
             subprocess.check_output(["mv", "src/gen", "../HEAD-1"], cwd=self.sdk_root_dir)
-            subprocess.check_output(["git", "checkout", "HEAD"], cwd=self.sdk_root_dir)
+            subprocess.check_output(["git", "checkout", current_commit], cwd=self.sdk_root_dir)
             subprocess.check_output(["make", "build-buf"], cwd=self.sdk_root_dir)
             subprocess.check_output(["mv", "src/gen", "../HEAD"], cwd=self.sdk_root_dir)
+            git_diff_output = subprocess.run(["diff", "-r", "-u", "--exclude='.*'", "../HEAD-1", "../HEAD"], text=True, capture_output=True, cwd=self.sdk_root_dir).stdout
+            sdk_tree_output = subprocess.check_output(["tree", "src"], text=True, cwd=self.sdk_root_dir)
+            tests_tree_output = "\nFor the Typescript SDK, the tests are included within the src directory (as .spec.ts files)."
+            subprocess.check_output(["rm", "-rf", "../HEAD-1", "../HEAD"], cwd=self.sdk_root_dir)
         else:
             raise ValueError(f"Invalid SDK: {sdk}. The AI updater currently only supports python, cpp, typescript, and flutter.")
         return {"git_diff_output": git_diff_output, "sdk_tree_output": sdk_tree_output, "tests_tree_output": tests_tree_output}
@@ -401,6 +427,8 @@ class AIUpdater:
         relevant_context = await self.get_relevant_context(git_diff_output, sdk_tree_output, tests_tree_output)
 
         diff_analysis = self.get_diff_analysis(git_diff_output, relevant_context)
+
+        self.generate_pr_summary(git_diff_output, diff_analysis)
 
         if not self.args.noai:
             self.apply_changes(diff_analysis)

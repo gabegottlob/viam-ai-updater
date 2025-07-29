@@ -124,3 +124,13 @@ Generate two equal-length lists:
 
 Begin by carefully reading the implementation requirements and file content, then generate your patches.
 """
+
+GENERATESUMMARY_P = '''You are an expert technical writer, adept at summarizing code changes from a git diff and a list of required changes. Your goal is to provide a concise, human-readable summary that can be used in a pull request body. Focus on the core purpose of the changes and their impact, not line-by-line details. The summary should be a short paragraph or a few bullet points.
+
+Here is the original git diff that led to the changes:
+{git_diff_output}
+
+Here is the AI's analysis of the required code changes, including files to update and implementation details:
+{diff_analysis_text}
+
+Provide a summary of the changes. The summary should be concise and easy to understand for a reviewer.'''

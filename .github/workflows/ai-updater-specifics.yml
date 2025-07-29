@@ -8,6 +8,10 @@ on:
         description: "The branch to base the update on"
         required: true
         type: string
+      sdk:
+        description: "The SDK that is being updated (currently supports python, cpp, typescript, flutter)"
+        required: true
+        type: string
     secrets:
       GOOGLE_API_KEY:
         required: true
@@ -35,6 +39,10 @@ jobs:
       - name: Install tree command
         run: brew install tree
 
+      - name: Install dependencies for typescript (if necessary)
+        if: inputs.sdk == 'typescript'
+        run: brew install node npm protobuf protoc-gen-grpc-web
+
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
@@ -52,22 +60,32 @@ jobs:
           uv pip install -r viam-ai-updater/requirements.txt
 
       - name: Run ai-updater
+        id: ai-updater
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
           cd viam-ai-updater/ai_updater
           uv run python ai_updater.py --debug --work $GITHUB_WORKSPACE/sdk
+          AI_SUMMARY=$(cat pr_summary.txt)
+          echo "ai_summary<<EOT" >> $GITHUB_OUTPUT
+          echo "$AI_SUMMARY" >> $GITHUB_OUTPUT
+          echo "EOT" >> $GITHUB_OUTPUT
 
       - name: Add + Commit + Open PR
         id: cpr
         uses: peter-evans/create-pull-request@v7
         with:
-          commit-message: '[WORKFLOW] AI update based on proto changes'
+          commit-message: '[WORKFLOW] AI update based on proto changes from commit ${{ github.event.head_commit.id }}'
           path: sdk
           branch: workflow/ai-updater
+          delete-branch: true
           base: main
           title: AI update based on proto changes
-          body: This is an AI-generated PR to update the SDK based on proto changes. The AI may make mistakes so review carefully.
+          body: |
+            This is an AI-generated PR to update the SDK based on proto changes. The AI may make mistakes so review carefully.
+
+            **Summary of Changes:**
+            ${{ steps.ai-updater.outputs.ai_summary }}
           assignees: gabegottlob
           reviewers: gabegottlob
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -65,7 +65,7 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
           cd viam-ai-updater/ai_updater
-          uv run python ai_updater.py --debug --work $GITHUB_WORKSPACE/sdk
+          uv run python ai_updater.py --debug --work $GITHUB_WORKSPACE/sdk --sdk ${{ inputs.sdk }}
           AI_SUMMARY=$(cat pr_summary.txt)
           echo "ai_summary<<EOT" >> $GITHUB_OUTPUT
           echo "$AI_SUMMARY" >> $GITHUB_OUTPUT

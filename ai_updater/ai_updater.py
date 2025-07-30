@@ -2,12 +2,14 @@ import os
 import argparse
 import subprocess
 import asyncio
+import json
 
+import anthropic
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from ai_updater_utils import read_file_content, write_to_file, calculate_cost
+from ai_updater_utils import read_file_content, write_to_file, calculate_cost_gemini, calculate_cost_anthropic
 from ai_updater_tools import apply_patch, apply_patch_declaration
 
 from prompts.getrelevantcontext_prompts import GETRELEVANTCONTEXT_P1, GETRELEVANTCONTEXT_P2, GETRELEVANTCONTEXT_S1, GETRELEVANTCONTEXT_S2
@@ -44,7 +46,7 @@ class RequiredChanges(BaseModel):
 class AIUpdater:
     """Class for updating SDK code based on proto changes using AI."""
 
-    def __init__(self, args, api_key=""):
+    def __init__(self, args):
         """Initialize the AIUpdater.
 
         Args:
@@ -64,11 +66,15 @@ class AIUpdater:
         os.environ['SDK_ROOT_DIR'] = self.sdk_root_dir
         os.environ['CURRENT_DIR'] = self.current_dir
 
-        # Initialize the Gemini client
-        api_key = api_key or os.getenv("GOOGLE_API_KEY")
-        if not api_key:
+        # Initialize the Gemini and Anthropic clients
+        gemini_api_key = os.getenv("GOOGLE_API_KEY")
+        if not gemini_api_key:
             raise ValueError("GOOGLE_API_KEY environment variable not set and no API key provided")
-        self.client = genai.Client(api_key=api_key)
+        anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not anthropic_api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set and no API key provided")
+        self.gemini = genai.Client(api_key=gemini_api_key)
+        self.anthropic = anthropic.Anthropic(api_key=anthropic_api_key)
         self.total_cost = 0.0
 
     async def get_relevant_context(self, git_diff_output: str, sdk_tree_output: str, tests_tree_output: str) -> list[ContextInclusion]:
@@ -88,7 +94,7 @@ class AIUpdater:
             git_diff_output=git_diff_output
         )
 
-        response = self.client.models.generate_content(
+        response = self.gemini.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -101,7 +107,7 @@ class AIUpdater:
             )
         )
         print(f"Finished get_relevant_context stage 1. Gemini model used: {response.model_version}")
-        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        self.total_cost += calculate_cost_gemini(response.usage_metadata, response.model_version)
         if self.args.debug:
             if self.args.work:
                 print(f"get_relevant_context stage 1 response: {response.text}")
@@ -115,7 +121,7 @@ class AIUpdater:
                 git_diff_output=git_diff_output,
                 file_content=file_content
             )
-            file_analysis.append(self.client.aio.models.generate_content(
+            file_analysis.append(self.gemini.aio.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -131,7 +137,7 @@ class AIUpdater:
         analysis_str = ""
         for response in file_analysis:
             analysis_str += response.text
-            self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+            self.total_cost += calculate_cost_gemini(response.usage_metadata, response.model_version)
         if self.args.debug:
             if self.args.work:
                 print(f"get_relevant_context stage 2 response: {analysis_str}")
@@ -160,29 +166,40 @@ class AIUpdater:
                 relevant_context += f"File: {file.filename}\nContent: \n{file_content}\n--------------------------------\n"
 
         prompt = DIFFPARSER_P.format(git_diff_output=git_diff_output, selected_context_files=relevant_context)
-        response =self.client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.0,
-                response_mime_type="application/json",
-                response_schema=RequiredChanges,
-                thinking_config=types.ThinkingConfig(thinking_budget=-1),
-                system_instruction=DIFFPARSER_S,
-                seed=42
-            )
-        )
 
-        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        # Anthropic
+        response = self.anthropic.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=16000,
+            temperature=0.0,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        self.total_cost += calculate_cost_anthropic(response)
         if self.args.debug:
             if self.args.work:
-                print(f"get_diff_analysis response: {response.text}")
+                print(f"get_diff_analysis response: {response.content[0].text}")
             elif self.args.test:
-                write_to_file(os.path.join(self.current_dir, "getdiffanalysis.txt"), response.text, quiet=True)
-        print(f"Finished get_diff_analysis. Gemini model used: {response.model_version}")
-        return response
+                write_to_file(os.path.join(self.current_dir, "getdiffanalysis.txt"), response.content[0].text, quiet=True)
+        print(f"Finished get_diff_analysis. Claude model used: {response.model}")
 
-    def generate_pr_summary(self, git_diff_output: str, diff_analysis: types.GenerateContentResponse):
+        # Create a wrapper to mimic Gemini's response structure
+        class ClaudeResponseWrapper:
+            def __init__(self, claude_response):
+                self.content = claude_response.content
+                self.model = claude_response.model
+                try:
+                    response_text = claude_response.content[0].text
+                    parsed_json = json.loads(response_text)
+                    self.parsed = RequiredChanges(**parsed_json)
+                    self.text = response_text
+                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                    raise ValueError(f"Failed to parse Claude response as valid JSON: {e}")
+
+        return ClaudeResponseWrapper(response)
+
+    def generate_pr_summary(self, git_diff_output: str, diff_analysis):
         """Generate a human-readable summary of the AI's updates to include in the PR.
 
         Args:
@@ -190,7 +207,7 @@ class AIUpdater:
             diff_analysis (types.GenerateContentResponse): The AI's analysis of required changes.
         """
         prompt = GENERATESUMMARY_P.format(git_diff_output=git_diff_output, diff_analysis_text=diff_analysis.text)
-        response = self.client.models.generate_content(
+        response = self.gemini.models.generate_content(
             model="gemini-2.5-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -199,7 +216,7 @@ class AIUpdater:
                 seed=42
             )
         )
-        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        self.total_cost += calculate_cost_gemini(response.usage_metadata, response.model_version)
         write_to_file(os.path.join(self.current_dir, "pr_summary.txt"), response.text, quiet=True)
         print(f"Finished generating PR summary. Gemini model used: {response.model_version}")
 
@@ -228,7 +245,7 @@ class AIUpdater:
         # Tool-calling feedback loop for applying patches
         while not patch_success and not stop_trying:
             attempt_count += 1
-            response = self.client.models.generate_content(
+            response = self.gemini.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=contents,
                 config=types.GenerateContentConfig(
@@ -244,7 +261,7 @@ class AIUpdater:
                     seed=42
                 )
             )
-            self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+            self.total_cost += calculate_cost_gemini(response.usage_metadata, response.model_version)
 
             # Append model's response to history
             if response.candidates and response.candidates[0].content:
@@ -300,7 +317,7 @@ class AIUpdater:
         else:
             message = f"=== {file_path} ===\nThis file does not exist. Please generate the entire file content from scratch."
             prompt = GENERATECOMPLETEFILE_P.format(implementation_detail=implementation_detail, existing_file_content=message)
-        response = self.client.models.generate_content(
+        response = self.gemini.models.generate_content(
             model="gemini-2.5-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -311,14 +328,14 @@ class AIUpdater:
             )
         )
 
-        self.total_cost += calculate_cost(response.usage_metadata, response.model_version)
+        self.total_cost += calculate_cost_gemini(response.usage_metadata, response.model_version)
         cleaned_response = response.text.strip()
         if cleaned_response.startswith("```") and cleaned_response.endswith("```"): #remove markdown code block formatting if present
             cleaned_response = "\n".join(cleaned_response.splitlines()[1:-1]) + "\n"
         write_to_file(ai_file_path, cleaned_response, quiet=True)
         print(f"Successfully generated {file_path}\n")
 
-    def apply_changes(self, diff_analysis: types.GenerateContentResponse):
+    def apply_changes(self, diff_analysis):
         """Apply all code changes suggested by the AI by choosing the appropriate update strategy for each file.
 
         This is the main orchestrator method that determines the best approach for each file:

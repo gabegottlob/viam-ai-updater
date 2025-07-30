@@ -1,94 +1,62 @@
 #Main prompt for analyzing git diff and generating implementation instructions
 DIFFPARSER_P = '''
-You are Stage 2 in a three-stage AI pipeline for automatically updating SDK code based on proto definition changes:
+You are an AI system specialized in analyzing protocol buffer (proto) changes and generating precise instructions for updating SDK code. Your task is part of an automated pipeline for maintaining SDKs in response to evolving proto definitions.
 
-STAGE 1: Context Selection - Already completed, provided you with relevant context files
-STAGE 2 (YOUR ROLE): Diff Analysis - Analyze proto changes and generate specific implementation instructions
-STAGE 3: Implementation Generation - Will execute your instructions to write actual code changes
+Here are the key inputs for your analysis:
 
-Your specific job is to:
-
-1. Thoroughly analyze the provided git diff to understand exactly what has changed in the proto definitions
-2. Study the provided context files to understand existing SDK patterns, conventions, and implementation approaches
-3. Determine precisely which files need to be updated or created to implement these proto changes
-4. Generate detailed, unambiguous implementation instructions for each file that needs modification
-
-## Git Diff (Proto Changes):
-{git_diff_output}
-
-## Selected Context Files:
+1. Context Files (Existing SDK Patterns):
+<context_files>
 {selected_context_files}
+</context_files>
 
-## CRITICAL REQUIREMENTS FOR YOUR OUTPUT:
+2. Git Diff (Proto Changes):
+<git_diff>
+{git_diff_output}
+</git_diff>
 
-### Implementation Instructions Must Be:
-- **COMPLETE**: Include every detail needed to implement the changes correctly
-- **SPECIFIC**: Provide exact method signatures, parameter names, return types, and implementation logic
-- **UNAMBIGUOUS**: Stage 3 will implement exactly what you specify with no additional context
-- **PATTERN-FOLLOWING**: Use the context files to understand and follow existing SDK conventions
-- **BEHAVIOR-PRESERVING**: Ensure existing functionality remains unchanged unless explicitly modified by proto changes
+Your objective is to analyze these inputs and generate detailed, unambiguous implementation instructions for updating the SDK. Follow these steps in your analysis:
 
-### For Each File That Needs Changes:
-Provide implementation instructions that specify:
+1. Parse the Git Diff to identify specific changes in proto messages, services, methods, or fields.
+2. Study the context files to understand existing SDK patterns and conventions.
+3. Determine which SDK components correspond to the changed protos and what modifications are necessary.
+4. Generate file-specific instructions for each file that needs changes or creation.
 
-**FOR EXISTING FILES:**
-- Exactly which methods/classes/functions need to be added, modified, or removed
-- Complete method signatures with parameter names and types
-- Any and all implementation logic
-- Where in the file to place new code (e.g., "Add method after line X" or "Add to end of class Y")
-- Any existing code that needs modification and exactly how to change it
-- Necessary comments and documentation, following the existing conventions of the file
-IMPORTANT: Never suggest any changes to auto-generated files.
+In <implementation_planning> tags inside your thinking block:
+1. List out all specific proto changes identified in the Git Diff.
+2. For each change, identify the corresponding SDK component that needs to be updated.
+3. Detail the necessary modifications for each SDK component, including method signatures, parameter names, return types, and implementation logic.
+4. Plan out any new files that need to be created.
+5. Verify that all proposed changes adhere to existing SDK patterns and conventions.
 
-**FOR NEW FILES:**
-- Explicitly state "This is a new file that needs to be created from scratch"
-- Complete file structure
-- All classes, methods, and functions that need to be implemented
-- Follow patterns from similar existing files shown in the context
+This detailed planning will ensure a thorough and transparent analysis.
 
-## ANALYSIS APPROACH:
+Critical Requirements:
+1. Precision: Provide exact method signatures, parameter names, return types, and implementation logic.
+2. Completeness: Include every detail needed for correct implementation.
+3. Pattern Adherence: Follow established SDK conventions from the context files.
+4. Functionality: Ensure new implementations integrate properly with existing architecture.
+5. Scope: Only suggest changes directly necessitated by the proto diff.
+6. No Auto-generated File Modifications: Never suggest changes to auto-generated files.
 
-1. **Parse the Git Diff**: Identify what specific proto messages, services, methods, or fields have been added, removed, or modified
+Output Format:
+Your final output must be a single JSON object with the following structure:
+{{
+  "files_to_update": ["file/path1", "file/path2", ...],
+  "implementation_details": ["Detailed instructions for file1", "Detailed instructions for file2", ...],
+  "create_new_files": [true/false, true/false, ...]
+}}
 
-2. **Map Proto Changes to SDK Impact**: Using the context files, determine:
-   - Which SDK components/services correspond to the changed protos
-   - What new functionality needs to be implemented
-   - What existing functionality needs to be updated
-   - What testing functionality needs to be added or updated
-   - Which files contain similar implementations to use as patterns
+Ensure that:
+- The lengths of all three arrays are identical.
+- Each file in "files_to_update" has exactly one corresponding entry in "implementation_details" and "create_new_files".
+- Implementation details are comprehensive enough for code generation without additional context.
+- Only include files that need changes or creation.
 
-3. **Generate File-Specific Instructions**: For each file that needs changes:
-   - Study similar files in the context to understand implementation patterns
-   - Determine exact changes needed (new methods, modified signatures, etc.)
-   - Specify implementation details that follow established conventions
-   - Ensure backward compatibility and proper error handling
+Before providing your final JSON output, verify that your proposed changes are correct, functional, and what an expert developer would consider appropriate.
 
-4. **Validate Completeness**: Ensure your instructions cover:
-   - All necessary implementation files
-   - Corresponding test files and test updates
-   - Any utility or helper functions needed
-   - Any necessary comments or documentation (following SDK conventions)
-   - Proper integration with existing SDK architecture
+Remember: Your JSON output will be the ONLY information provided to the next stage of the pipeline. It must be self-contained and actionable without any additional context.
 
-## FINAL VERIFICATION:
-
-Before providing implementation instructions, take a moment to think through your proposed changes and ensure they are correct.
-Consider if they make sense in the broader context of the SDK and if there might be any issues you haven't considered yet.
-Ensure that your proposed changes are what an expert developer would write and consider correct, functional code.
-
-## OUTPUT REQUIREMENTS:
-
-Your response must contain:
-- `files_to_update`: List of file paths that need modification or creation
-- `implementation_details`: List of detailed implementation instructions (one per file, same order as files_to_update)
-- `create_new_files`: List of booleans indicating whether or not to create a new file for each file in `files_to_update`
-
-Your output should only include files that need changes. Never include files that do not need changes. Never suggest any changes to auto-generated files.
-
-The implementation instructions will be the ONLY information provided to Stage 3. They must be comprehensive enough for an AI to implement correct, functional code without any additional context or clarification.
-
-Remember: Stage 3 will receive only your implementation instructions and the existing file content (if the file exists). It will not have access to the git diff, context files, or any other information. Your instructions must be completely self-contained and actionable.
-'''
+Your final output should consist only of the JSON object and should not duplicate or rehash any of the work you did in the implementation planning block.'''
 
 #System prompt for analyzing git diff and generating implementation instructions
 DIFFPARSER_S = '''
@@ -114,5 +82,6 @@ IMPORTANT OUTPUT RULES:
 - For each file in `files_to_update`, output exactly ONE corresponding implementation instruction (containing all the changes needed for that file) in `implementation_details` (in the same order).
 - Never output multiple instruction lists for a single file. Each file must have a single, comprehensive instruction entry.
 - The lengths of `files_to_update`, `implementation_details`, and `create_new_files` must always match exactly.
+- Your output must be valid JSON matching the required schema.
 '''
 

@@ -28,7 +28,7 @@ def read_file_content(file_path) -> str:
         print(f"Error reading file: {str(e)}")
         return f"Error reading file: {str(e)}"
 
-def calculate_cost(usage_metadata, model: str) -> float:
+def calculate_cost_gemini(usage_metadata, model: str) -> float:
     """Calculates the estimated cost of a Gemini response.
 
     Args:
@@ -65,3 +65,26 @@ def calculate_cost(usage_metadata, model: str) -> float:
 
     cost = (input_tokens / 1_000_000) * INPUT_COST_PER_MILLION_TOKENS + (output_tokens / 1_000_000) * OUTPUT_COST_PER_MILLION_TOKENS
     return cost
+
+def calculate_cost_anthropic(response) -> float:
+    """Calculates the estimated cost of a Anthropic response.
+
+    Args:
+        response: The Anthropic response.
+    """
+    if(response.model == "claude-sonnet-4-20250514"):
+        INPUT_COST_PER_MILLION_TOKENS = 3.00
+        OUTPUT_COST_PER_MILLION_TOKENS = 15.00
+    elif(response.model == "claude-3-5-haiku-20241022"):
+        INPUT_COST_PER_MILLION_TOKENS = 0.80
+        OUTPUT_COST_PER_MILLION_TOKENS = 4.00
+    else:
+        print(f"WARNING: {response.model} is not a supported model for cost calculation")
+        return 0.0
+
+    input_tokens = response.usage.input_tokens
+    output_tokens = response.usage.output_tokens
+
+    cost = (input_tokens / 1_000_000) * INPUT_COST_PER_MILLION_TOKENS + (output_tokens / 1_000_000) * OUTPUT_COST_PER_MILLION_TOKENS
+    return cost
+

@@ -88,3 +88,20 @@ def calculate_cost_anthropic(response) -> float:
     cost = (input_tokens / 1_000_000) * INPUT_COST_PER_MILLION_TOKENS + (output_tokens / 1_000_000) * OUTPUT_COST_PER_MILLION_TOKENS
     return cost
 
+def extract_json_from_tags(text: str) -> str | None:
+    """Extract JSON content from <output_json> tags.
+
+    Args:
+        text: Text that may contain JSON within <output_json> tags
+
+    Returns:
+        str | None: Extracted JSON content or None if no tags found
+    """
+    import re
+    # Look for content between <output_json> and </output_json> tags
+    pattern = r'<output_json>\s*(.*?)\s*</output_json>'
+    match = re.search(pattern, text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    raise ValueError("The AI returned malformed output that could not be parsed as JSON")
+

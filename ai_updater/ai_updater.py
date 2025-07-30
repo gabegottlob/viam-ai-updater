@@ -9,11 +9,11 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from ai_updater_utils import read_file_content, write_to_file, calculate_cost_gemini, calculate_cost_anthropic
+from ai_updater_utils import read_file_content, write_to_file, calculate_cost_gemini, calculate_cost_anthropic, extract_json_from_tags
 from ai_updater_tools import apply_patch, apply_patch_declaration
 
 from prompts.getrelevantcontext_prompts import GETRELEVANTCONTEXT_P1, GETRELEVANTCONTEXT_P2, GETRELEVANTCONTEXT_S1, GETRELEVANTCONTEXT_S2
-from prompts.diffparser_prompts import DIFFPARSER_P, DIFFPARSER_S
+from prompts.diffparser_prompts import DIFFPARSER_P
 from prompts.applychanges_prompts import GENERATECOMPLETEFILE_P, GENERATECOMPLETEFILE_S, GENERATEPATCH_P, GENERATEPATCH_S, GENERATESUMMARY_P
 
 class ContextFiles(BaseModel):
@@ -191,7 +191,8 @@ class AIUpdater:
                 self.model = claude_response.model
                 try:
                     response_text = claude_response.content[0].text
-                    parsed_json = json.loads(response_text)
+                    json_text = extract_json_from_tags(response_text)
+                    parsed_json = json.loads(json_text)
                     self.parsed = RequiredChanges(**parsed_json)
                     self.text = response_text
                 except (json.JSONDecodeError, KeyError, TypeError) as e:

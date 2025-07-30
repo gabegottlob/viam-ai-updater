@@ -4,5 +4,5 @@ ai_updater/*.txt
 ai_updater/scenario-*/ai_generated/
 .vscode/launch.json
 .venv/
-src/
-tests/
+/src/
+/tests/
